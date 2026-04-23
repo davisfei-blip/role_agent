@@ -184,9 +184,7 @@
       </div>
       <div class="progress-stats">
         <span>视频素材：{{ workspace.case_bundle.downloaded_count }} 已下载</span>
-        <span>音频：{{ workspace.case_bundle.audio_count }} 已生成</span>
         <span>封面：{{ workspace.case_bundle.covered_count }} 已生成</span>
-        <span>图片：{{ workspace.case_bundle.image_count }} 已下载</span>
       </div>
     </div>
     {% endif %}
@@ -234,15 +232,11 @@
         </div>
         {% endif %}
 
-        {% if row.has_source_video or row.has_audio or row.has_cover or row.image_relpaths %}
+        {% if row.has_source_video or row.has_cover %}
         <div class="case-block">
           <strong>本地素材</strong>
           <p>原始视频：{{ row.source_video_relpath if row.has_source_video else "未下载" }}</p>
-          <p>音频：{{ row.audio_relpath if row.has_audio else "未生成" }}</p>
           <p>封面：{{ row.cover_relpath if row.has_cover else "未生成" }}</p>
-          {% if row.image_relpaths %}
-          <p>图片：{{ row.image_relpaths|length }} 张</p>
-          {% endif %}
         </div>
         {% endif %}
 
