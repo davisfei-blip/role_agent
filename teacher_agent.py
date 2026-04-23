@@ -40,7 +40,34 @@ class TeacherAgent:
             "questions": topic["questions"]
         }
 
-    def evaluate_answer(self, question, student_answer, role):
+    def _chat(self, messages, on_delta=None):
+        client = get_openai_client()
+
+        if on_delta:
+            stream = client.chat.completions.create(
+                model=config.model_name,
+                messages=messages,
+                stream=True,
+            )
+            parts = []
+            for chunk in stream:
+                choices = chunk.choices or []
+                if not choices:
+                    continue
+                delta = choices[0].delta.content or ""
+                if not delta:
+                    continue
+                parts.append(delta)
+                on_delta(delta)
+            return "".join(parts)
+
+        response = client.chat.completions.create(
+            model=config.model_name,
+            messages=messages,
+        )
+        return response.choices[0].message.content
+
+    def evaluate_answer(self, question, student_answer, role, on_delta=None):
         evaluation_prompt = f"""你是一名严格的{role}面试官/老师。请评估以下回答：
 
 问题：{question}
@@ -64,15 +91,13 @@ class TeacherAgent:
 改进建议：
 [具体建议]"""
 
-        client = get_openai_client()
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=[
+        return self._chat(
+            [
                 {"role": "system", "content": "你是一名严格但专业的老师，负责评估学生的回答并给出建设性反馈。"},
                 {"role": "user", "content": evaluation_prompt}
-            ]
+            ],
+            on_delta=on_delta,
         )
-        return response.choices[0].message.content
 
     def extract_score(self, evaluation):
         try:
@@ -90,7 +115,7 @@ class TeacherAgent:
     def is_pass(self, score, pass_score=70):
         return score >= pass_score
 
-    def give_feedback(self, evaluation):
+    def give_feedback(self, evaluation, on_delta=None):
         feedback_prompt = f"""基于以下评估结果，给学生提供具体、可操作的反馈建议，帮助其改进：
 
 {evaluation}
@@ -100,12 +125,10 @@ class TeacherAgent:
 2. 需要重点改进的地方
 3. 具体的学习建议"""
 
-        client = get_openai_client()
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=[
+        return self._chat(
+            [
                 {"role": "system", "content": "你是一名富有经验的导师，善于给出建设性的反馈。"},
                 {"role": "user", "content": feedback_prompt}
-            ]
+            ],
+            on_delta=on_delta,
         )
-        return response.choices[0].message.content

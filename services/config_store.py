@@ -162,6 +162,7 @@ class ConfigStore:
             "recent_training_time": (latest_run or {}).get("finished_at") or latest.get("timestamp"),
             "recent_topic": latest.get("topic"),
             "recent_feedback": latest.get("teacher_feedback", ""),
+            "recent_memories": recent_memories[:3],
             "recent_run": latest_run,
         }
 

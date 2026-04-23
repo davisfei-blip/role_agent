@@ -1,0 +1,9 @@
+﻿gid,title,content,judge,reason,category,status,error
+7611504951429410790,,,,,,failed,"('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))"
+7605861711350901651,,,,,,failed,404 Client Error: Not Found for url: https://example.com/1.jpg
+7617800229077152187,,,,,,failed,"HTTPSConnectionPool(host='example.com', port=443): Read timed out. (read timeout=120)"
+7609325286547327907,,,,,,failed,404 Client Error: Not Found for url: https://example.com/1.jpg
+7604918710541622117,,,,,,failed,404 Client Error: Not Found for url: https://example.com/1.jpg
+7624867256287107259,,,,,,failed,404 Client Error: Not Found for url: https://example.com/1.jpg
+7611534939964503205,,,,,,failed,404 Client Error: Not Found for url: https://example.com/1.jpg
+7579205962260858041,,,,,,failed,404 Client Error: Not Found for url: https://example.com/1.jpg

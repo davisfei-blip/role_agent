@@ -2,8 +2,8 @@
 {% block content %}
 <section class="page-header">
   <div>
-    <h1>Student 训练首页</h1>
-    <p>选一个 student，继续训练、补案例、改课程。</p>
+    <h1>学习中心</h1>
+    <p>这里看 agent 的训练配置、最近学习过程和训练结果。</p>
   </div>
 </section>
 
@@ -50,6 +50,15 @@
         <dd>{{ student.case_file or "未上传" }}</dd>
       </div>
     </dl>
+    {% if student.recent_memories %}
+    <div class="case-block">
+      <strong>最近学习过程</strong>
+      {% for item in student.recent_memories %}
+      <p class="hint">{{ item.timestamp }} · {{ item.topic }}</p>
+      <p>{{ item.knowledge[:120] ~ ('...' if item.knowledge|length > 120 else '') }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="card-footer">
       <p class="hint">{{ student.recent_feedback[:80] ~ ('...' if student.recent_feedback|length > 80 else '') if student.recent_feedback else "还没有 teacher feedback 记录" }}</p>
       <a class="button" href="/students/{{ student.config_key }}">进入工作台</a>

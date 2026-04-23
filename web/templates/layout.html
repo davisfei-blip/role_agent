@@ -11,7 +11,8 @@
     <aside class="sidebar">
       <div class="brand">Agent 训练台</div>
       <nav class="nav">
-        <a href="/" class="nav-link {% if request.url.path == '/' %}is-active{% endif %}">首页</a>
+        <a href="/learning" class="nav-link {% if request.url.path == '/' or request.url.path.startswith('/learning') or request.url.path.startswith('/students') %}is-active{% endif %}">学习</a>
+        <a href="/tasks" class="nav-link {% if request.url.path.startswith('/tasks') %}is-active{% endif %}">任务执行</a>
         <a href="/runs" class="nav-link {% if request.url.path.startswith('/runs') %}is-active{% endif %}">训练记录</a>
         <a href="/settings" class="nav-link {% if request.url.path == '/settings' %}is-active{% endif %}">系统设置</a>
         <div class="nav-section">Students</div>

@@ -6,7 +6,7 @@
     <p>{{ run.student_name }} · {{ "常规训练" if run.mode == "standard" else "案例纠偏" }} · {{ run.finished_at or run.started_at }}</p>
   </div>
   <div class="header-actions">
-    <span class="badge {% if run.status == 'completed' %}badge-success{% elif run.status == 'failed' %}badge-error{% endif %}">{{ run.status }}</span>
+    <span class="badge {% if run.status == 'completed' %}badge-success{% elif run.status == 'failed' %}badge-error{% else %}badge-accent{% endif %}">{{ run.status }}</span>
     <span class="badge">{{ run.config_key }}</span>
   </div>
 </section>
@@ -38,6 +38,34 @@
           已处理 {{ run.summary.processed_cases if run.summary else 0 }} / {{ run.summary.total_cases if run.summary else 0 }}
         {% endif %}
       </strong>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>实时过程</h2>
+      <p id="live-run-step">{{ run.current_step or "等待开始" }}</p>
+    </div>
+    <div class="header-actions">
+      <span id="live-run-status" class="badge {% if run.status == 'completed' %}badge-success{% elif run.status == 'failed' %}badge-error{% else %}badge-accent{% endif %}">{{ run.status }}</span>
+    </div>
+  </div>
+
+  <div style="margin-bottom: var(--space-4);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+      <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">训练进度</span>
+      <span id="live-run-percent" style="font-size: 13px; color: var(--text-secondary);">{{ run.progress_percent or 0 }}%</span>
+    </div>
+    <div class="progress-bar">
+      <div id="live-run-fill" class="progress-bar-fill" style="width: {{ run.progress_percent or 0 }}%"></div>
+    </div>
+  </div>
+
+  <div class="memory-list" id="run-live-timeline">
+    <div class="empty-state" id="run-live-empty">
+      <p>正在等待训练事件流...</p>
     </div>
   </div>
 </section>
@@ -104,4 +132,187 @@
     {% endfor %}
   </section>
 {% endif %}
+
+<script>
+const initialRun = {{ run | tojson }};
+let source = null;
+let timelineStarted = false;
+let reloadedAfterComplete = false;
+let runStatePoller = null;
+const shouldAutoReload = initialRun.status === 'running';
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function badgeClass(status) {
+  if (status === 'completed') return 'badge badge-success';
+  if (status === 'failed') return 'badge badge-error';
+  return 'badge badge-accent';
+}
+
+function renderRunState(run) {
+  document.getElementById('live-run-status').textContent = run.status || 'running';
+  document.getElementById('live-run-status').className = badgeClass(run.status || 'running');
+  document.getElementById('live-run-step').textContent = run.current_step || '等待开始';
+  document.getElementById('live-run-percent').textContent = `${run.progress_percent || 0}%`;
+  document.getElementById('live-run-fill').style.width = `${run.progress_percent || 0}%`;
+}
+
+function eventTitle(event) {
+  const speakerMap = { student: 'Student', teacher: 'Teacher', system: 'System' };
+  const phaseMap = {
+    learn: '学习',
+    answer: '答题',
+    evaluation: '评估',
+    feedback: '反馈',
+    prompt_iteration: 'Prompt 优化',
+    judge: '学生判断',
+    reflection: '纠偏学习',
+    topic: '考点',
+    score: '评分',
+    user_reference: '人工标准',
+    run: '运行',
+    case: '案例',
+    pass: '通过'
+  };
+  const speaker = speakerMap[event.speaker] || event.speaker || 'System';
+  const phase = phaseMap[event.phase] || event.phase || '消息';
+  return `${speaker} · ${phase}`;
+}
+
+function timelineContainer() {
+  return document.getElementById('run-live-timeline');
+}
+
+function ensureTimelineStarted() {
+  if (timelineStarted) return;
+  timelineStarted = true;
+  const empty = document.getElementById('run-live-empty');
+  if (empty) empty.remove();
+}
+
+function messageKey(event) {
+  return [
+    event.speaker || '',
+    event.phase || '',
+    event.topic_name || '',
+    event.iteration || '',
+    event.question || '',
+    event.case_index || '',
+    event.gid || '',
+  ].join('::');
+}
+
+function domIdFromKey(key) {
+  return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function appendStepEvent(event) {
+  ensureTimelineStarted();
+  const article = document.createElement('article');
+  article.className = 'memory-card';
+  article.innerHTML = `
+    <div class="memory-meta">
+      <strong>${escapeHtml(eventTitle(event))}</strong>
+      <span>${escapeHtml(event.timestamp || '')}</span>
+    </div>
+    <p>${escapeHtml(event.content || '')}</p>
+  `;
+  timelineContainer().appendChild(article);
+  article.scrollIntoView({ block: 'end', behavior: 'smooth' });
+}
+
+function startMessage(event) {
+  ensureTimelineStarted();
+  const key = messageKey(event);
+  const domKey = domIdFromKey(key);
+  let article = document.getElementById(`msg-${domKey}`);
+  if (!article) {
+    article = document.createElement('article');
+    article.className = 'memory-card';
+    article.id = `msg-${domKey}`;
+    article.innerHTML = `
+      <div class="memory-meta">
+        <strong>${escapeHtml(eventTitle(event))}</strong>
+        <span>${escapeHtml(event.timestamp || '')}</span>
+      </div>
+      <pre id="msg-body-${domKey}" style="white-space: pre-wrap;"></pre>
+    `;
+    timelineContainer().appendChild(article);
+  }
+  article.scrollIntoView({ block: 'end', behavior: 'smooth' });
+}
+
+function appendDelta(event) {
+  const domKey = domIdFromKey(messageKey(event));
+  let body = document.getElementById(`msg-body-${domKey}`);
+  if (!body) {
+    startMessage(event);
+    body = document.getElementById(`msg-body-${domKey}`);
+  }
+  body.textContent += event.content || '';
+}
+
+function completeMessage(event) {
+  const domKey = domIdFromKey(messageKey(event));
+  let body = document.getElementById(`msg-body-${domKey}`);
+  if (!body) {
+    startMessage(event);
+    body = document.getElementById(`msg-body-${domKey}`);
+  }
+  body.textContent = event.content || body.textContent || '';
+}
+
+async function pollRunState() {
+  try {
+    const response = await fetch(`/runs/${initialRun.run_id}/status`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '获取训练状态失败');
+    renderRunState(payload.run);
+    if (shouldAutoReload && (payload.run.status === 'completed' || payload.run.status === 'failed') && !reloadedAfterComplete) {
+      reloadedAfterComplete = true;
+      window.setTimeout(() => window.location.reload(), 1200);
+      return;
+    }
+    runStatePoller = window.setTimeout(pollRunState, 1200);
+  } catch (error) {
+    runStatePoller = window.setTimeout(pollRunState, 2000);
+  }
+}
+
+function connectRunStream() {
+  source = new EventSource(`/runs/${initialRun.run_id}/events/stream`);
+  source.onmessage = async (msg) => {
+    const event = JSON.parse(msg.data);
+    if (event.event === 'stream_closed') {
+      source.close();
+      return;
+    }
+
+    if (event.event === 'step' || event.event === 'run_started' || event.event === 'run_failed' || event.event === 'run_completed' || event.event === 'run_finished') {
+      appendStepEvent(event);
+    } else if (event.event === 'message_started') {
+      startMessage(event);
+    } else if (event.event === 'message_delta') {
+      appendDelta(event);
+    } else if (event.event === 'message_completed') {
+      completeMessage(event);
+    }
+  };
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  renderRunState(initialRun);
+  connectRunStream();
+  pollRunState();
+});
+</script>
 {% endblock %}

@@ -1,0 +1,295 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>任务执行</h1>
+    <p>选择已有 agent，输入一批 gid，让它直接输出 judge 和 reason，并支持下载结果表。</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>新建执行任务</h2>
+      <p>一行一个 gid，也支持直接贴抖音链接。</p>
+    </div>
+  </div>
+
+  <form id="task-execution-form" class="form-panel" onsubmit="return startTaskExecution(event)">
+    <div class="field">
+      <label>选择 agent</label>
+      <select name="config_key" id="task-agent-select" required>
+        {% for student in students %}
+        <option value="{{ student.config_key }}">{{ student.name }}（{{ student.config_key }}）</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>gid 列表</label>
+      <textarea name="gids_text" id="task-gids-text" rows="10" placeholder="一行一个 gid 或抖音链接" required></textarea>
+    </div>
+    <div class="actions">
+      <button class="button" id="task-submit-button" type="submit">开始执行</button>
+      <span class="hint">系统会自动解析内容，再调用所选 agent 做判定。</span>
+    </div>
+  </form>
+</section>
+
+<section class="panel" id="task-current-panel">
+  <div class="panel-header">
+    <div>
+      <h2>当前任务</h2>
+      <p id="task-summary-text">还没有开始执行。</p>
+    </div>
+    <div class="header-actions">
+      <span id="task-status" class="badge">idle</span>
+      <a id="task-download-link" class="button button-sm" href="#" style="display:none;">下载结果表</a>
+    </div>
+  </div>
+
+  <div style="margin-bottom: var(--space-4);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+      <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">执行进度</span>
+      <span id="task-percent" style="font-size: 13px; color: var(--text-secondary);">0%</span>
+    </div>
+    <div class="progress-bar">
+      <div id="task-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+    </div>
+  </div>
+
+  <div class="progress-stats" id="task-stats">
+    <span>待执行：0</span>
+    <span>执行中：0</span>
+    <span>完成：0</span>
+    <span>失败：0</span>
+  </div>
+
+  <p class="hint" id="task-meta">执行完成后可以直接下载 CSV。</p>
+
+  <div class="table-wrap" id="task-results-wrap" style="display:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>gid</th>
+          <th>标题</th>
+          <th>judge</th>
+          <th>reason</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody id="task-results-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <h2>最近执行记录</h2>
+      <p>这里保留最近的任务执行结果。</p>
+    </div>
+  </div>
+  {% if executions %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>Agent</th>
+          <th>数量</th>
+          <th>状态</th>
+          <th>进度</th>
+          <th>下载</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for execution in executions %}
+        <tr>
+          <td>{{ execution.finished_at or execution.started_at }}</td>
+          <td>{{ execution.student_name }}</td>
+          <td>{{ execution.input_count }}</td>
+          <td>
+            <span class="badge {% if execution.status == 'completed' %}badge-success{% elif execution.status == 'completed_with_errors' or execution.status == 'failed' %}badge-error{% else %}badge-accent{% endif %}">
+              {{ execution.status }}
+            </span>
+          </td>
+          <td>{{ execution.progress_percent }}%</td>
+          <td>
+            {% if execution.download_path %}
+            <a class="button button-sm" href="/tasks/executions/{{ execution.execution_id }}/download">下载</a>
+            {% else %}
+            --
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>还没有任务执行记录。</p>
+  </div>
+  {% endif %}
+</section>
+
+<script>
+const initialExecution = {{ latest_execution | tojson }};
+let currentExecutionId = null;
+let taskPoller = null;
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function taskBadgeClass(status) {
+  if (status === 'running') return 'badge badge-accent';
+  if (status === 'completed') return 'badge badge-success';
+  if (status === 'completed_with_errors' || status === 'failed') return 'badge badge-error';
+  return 'badge';
+}
+
+function renderExecution(execution) {
+  const statusEl = document.getElementById('task-status');
+  const summaryEl = document.getElementById('task-summary-text');
+  const percentEl = document.getElementById('task-percent');
+  const fillEl = document.getElementById('task-progress-fill');
+  const statsEl = document.getElementById('task-stats');
+  const metaEl = document.getElementById('task-meta');
+  const tableWrap = document.getElementById('task-results-wrap');
+  const tbody = document.getElementById('task-results-body');
+  const downloadLink = document.getElementById('task-download-link');
+  const submitButton = document.getElementById('task-submit-button');
+
+  if (!execution) {
+    statusEl.textContent = 'idle';
+    statusEl.className = 'badge';
+    summaryEl.textContent = '还没有开始执行。';
+    percentEl.textContent = '0%';
+    fillEl.style.width = '0%';
+    statsEl.innerHTML = '<span>待执行：0</span><span>执行中：0</span><span>完成：0</span><span>失败：0</span>';
+    metaEl.textContent = '执行完成后可以直接下载 CSV。';
+    tableWrap.style.display = 'none';
+    downloadLink.style.display = 'none';
+    submitButton.disabled = false;
+    submitButton.textContent = '开始执行';
+    return;
+  }
+
+  statusEl.textContent = execution.status || 'idle';
+  statusEl.className = taskBadgeClass(execution.status);
+  summaryEl.textContent = `${execution.student_name} · ${execution.summary.completed || 0} / ${execution.input_count || 0} 已完成`;
+  percentEl.textContent = `${execution.progress_percent || 0}%`;
+  fillEl.style.width = `${execution.progress_percent || 0}%`;
+  statsEl.innerHTML = `
+    <span>待执行：${execution.summary.pending || 0}</span>
+    <span>执行中：${execution.summary.running || 0}</span>
+    <span>完成：${execution.summary.completed || 0}</span>
+    <span>失败：${execution.summary.failed || 0}</span>
+  `;
+
+  const finishedText = execution.finished_at ? `，结束于 ${execution.finished_at}` : '';
+  metaEl.textContent = `开始于 ${execution.started_at || '--'}${finishedText}`;
+
+  const items = execution.items || [];
+  if (items.length) {
+    tableWrap.style.display = 'block';
+    tbody.innerHTML = items.map(item => `
+      <tr>
+        <td>${escapeHtml(item.gid)}</td>
+        <td>${escapeHtml(item.title || '')}</td>
+        <td>${escapeHtml(item.judge || '')}</td>
+        <td>${escapeHtml(item.reason || item.message || '')}</td>
+        <td>${escapeHtml(item.status || '')}</td>
+      </tr>
+    `).join('');
+  } else {
+    tableWrap.style.display = 'none';
+  }
+
+  if (execution.download_path) {
+    downloadLink.href = `/tasks/executions/${execution.execution_id}/download`;
+    downloadLink.style.display = 'inline-flex';
+  } else {
+    downloadLink.style.display = 'none';
+  }
+
+  submitButton.disabled = execution.status === 'running';
+  submitButton.textContent = execution.status === 'running' ? '执行中...' : '开始执行';
+}
+
+async function startTaskExecution(event) {
+  event.preventDefault();
+  const form = document.getElementById('task-execution-form');
+  const submitButton = document.getElementById('task-submit-button');
+  submitButton.disabled = true;
+  submitButton.textContent = '执行中...';
+
+  try {
+    const response = await fetch('/tasks/execute', {
+      method: 'POST',
+      body: new FormData(form),
+      headers: { 'Accept': 'application/json' }
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || '启动任务失败');
+    }
+    currentExecutionId = payload.execution_id;
+    renderExecution(payload);
+    stopTaskPolling();
+    pollTaskExecution();
+  } catch (error) {
+    submitButton.disabled = false;
+    submitButton.textContent = '开始执行';
+    alert(error.message);
+  }
+  return false;
+}
+
+function stopTaskPolling() {
+  if (taskPoller) {
+    window.clearTimeout(taskPoller);
+    taskPoller = null;
+  }
+}
+
+async function pollTaskExecution() {
+  if (!currentExecutionId) return;
+  try {
+    const response = await fetch(`/tasks/executions/${currentExecutionId}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || '获取任务失败');
+    }
+    renderExecution(payload.execution);
+    if (payload.execution && payload.execution.status === 'running') {
+      taskPoller = window.setTimeout(pollTaskExecution, 1500);
+      return;
+    }
+    stopTaskPolling();
+    window.setTimeout(() => window.location.reload(), 800);
+  } catch (error) {
+    stopTaskPolling();
+    alert(error.message);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  renderExecution(initialExecution);
+  if (initialExecution) {
+    currentExecutionId = initialExecution.execution_id;
+    if (initialExecution.status === 'running') {
+      pollTaskExecution();
+    }
+  }
+});
+</script>
+{% endblock %}

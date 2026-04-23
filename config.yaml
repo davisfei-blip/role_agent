@@ -10,10 +10,10 @@ memory:
 case_studies:
   content_operation:
     file: case_studies/content_operation/dataset.xlsx
-  strategy_product:
-    file: case_studies/strategy_product/dataset.xlsx
   content_judge:
     file: case_studies/content_judge/dataset.xlsx
+  strategy_product:
+    file: case_studies/strategy_product/dataset.xlsx
 students:
 - name: 策略产品专家
   role: 互联网策略产品经理

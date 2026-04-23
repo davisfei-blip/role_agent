@@ -71,7 +71,34 @@ class StudentAgent:
         if config.memory_enabled and config.memory_auto_save:
             memory_manager.save_structured_memory(self.name, self.knowledge_base)
 
-    def learn(self, topic_description, teacher_feedback=None):
+    def _chat(self, messages, on_delta=None):
+        client = get_openai_client()
+
+        if on_delta:
+            stream = client.chat.completions.create(
+                model=config.model_name,
+                messages=messages,
+                stream=True,
+            )
+            parts = []
+            for chunk in stream:
+                choices = chunk.choices or []
+                if not choices:
+                    continue
+                delta = choices[0].delta.content or ""
+                if not delta:
+                    continue
+                parts.append(delta)
+                on_delta(delta)
+            return "".join(parts)
+
+        response = client.chat.completions.create(
+            model=config.model_name,
+            messages=messages,
+        )
+        return response.choices[0].message.content
+
+    def learn(self, topic_description, teacher_feedback=None, on_delta=None):
         # 如果启用搜索功能，先搜索相关信息
         search_info = ""
         search_results = None
@@ -92,15 +119,13 @@ class StudentAgent:
 
 请总结你学到的关键点，结合搜索到的信息（如果有）进行学习。"""
 
-        client = get_openai_client()
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=[
+        knowledge = self._chat(
+            [
                 {"role": "system", "content": self.current_prompt},
                 {"role": "user", "content": learning_prompt}
-            ]
+            ],
+            on_delta=on_delta,
         )
-        knowledge = response.choices[0].message.content
         
         # 保存学习记录到记忆
         memory_item = {
@@ -117,24 +142,22 @@ class StudentAgent:
         
         return knowledge
 
-    def take_exam(self, question):
+    def take_exam(self, question, on_delta=None):
         exam_prompt = f"""请回答以下问题：
 {question}
 请基于你已学的知识进行回答。
 已学知识：
 {json.dumps([{"topic": k["topic"], "knowledge": k["knowledge"]} for k in self.knowledge_base], ensure_ascii=False, indent=2)}"""
 
-        client = get_openai_client()
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=[
+        return self._chat(
+            [
                 {"role": "system", "content": self.current_prompt},
                 {"role": "user", "content": exam_prompt}
-            ]
+            ],
+            on_delta=on_delta,
         )
-        return response.choices[0].message.content
 
-    def iterate_prompt(self, teacher_feedback):
+    def iterate_prompt(self, teacher_feedback, on_delta=None):
         self.last_feedback = teacher_feedback
         
         iteration_prompt = f"""请根据老师的以下反馈，优化你的系统prompt，以便更好地回答问题：
@@ -146,18 +169,16 @@ class StudentAgent:
 
 请提供优化后的系统prompt，只输出prompt内容，不要其他解释。"""
 
-        client = get_openai_client()
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=[
+        new_prompt = self._chat(
+            [
                 {"role": "user", "content": iteration_prompt}
-            ]
+            ],
+            on_delta=on_delta,
         )
-        new_prompt = response.choices[0].message.content
         self._save_prompt(new_prompt)
         return new_prompt
 
-    def judge_case(self, case_title, case_content):
+    def judge_case(self, case_title, case_content, on_delta=None):
         """判断案例是否有问题"""
         judge_prompt = f"""请判断以下内容是否有问题：
 
@@ -169,17 +190,15 @@ class StudentAgent:
 2. 判断理由：（详细说明原因）
 3. 问题分类：（如虚假宣传、低俗内容等）"""
 
-        client = get_openai_client()
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=[
+        return self._chat(
+            [
                 {"role": "system", "content": self.current_prompt},
                 {"role": "user", "content": judge_prompt}
-            ]
+            ],
+            on_delta=on_delta,
         )
-        return response.choices[0].message.content
 
-    def learn_from_user_feedback(self, case_title, case_content, user_judgment, user_reason, student_judgment):
+    def learn_from_user_feedback(self, case_title, case_content, user_judgment, user_reason, student_judgment, on_delta=None):
         """根据用户反馈学习纠偏"""
         learn_prompt = f"""请通过以下案例学习纠偏：
 
@@ -196,15 +215,13 @@ class StudentAgent:
 
 请分析你和用户判断的差异，并总结你应该如何改进你的判断标准。"""
 
-        client = get_openai_client()
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=[
+        knowledge = self._chat(
+            [
                 {"role": "system", "content": self.current_prompt},
                 {"role": "user", "content": learn_prompt}
-            ]
+            ],
+            on_delta=on_delta,
         )
-        knowledge = response.choices[0].message.content
 
         # 保存学习记录到记忆
         memory_item = {
