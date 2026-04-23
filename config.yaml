@@ -8,12 +8,12 @@ memory:
   auto_save: true
   memory_dir: memory
 case_studies:
-  content_judge:
-    file: case_studies/content_judge/dataset.csv
   content_operation:
     file: case_studies/content_operation/dataset.xlsx
   strategy_product:
     file: case_studies/strategy_product/dataset.xlsx
+  content_judge:
+    file: case_studies/content_judge/dataset.xlsx
 students:
 - name: 策略产品专家
   role: 互联网策略产品经理
@@ -76,7 +76,7 @@ content_operation:
     - 如何根据数据反馈调整内容策略
 content_judge:
   role: 内容质量审核与标准制定专家
-  max_iterations: 3
+  max_iterations: 10
   topics:
   - name: 抖音内容生态问题判断标准
     description: 学习如何判断抖音视频是否存在生态问题，制定明确的判断标准

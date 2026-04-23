@@ -25,6 +25,9 @@
 {% if uploaded %}
 <div class="flash flash-success">案例表已上传并绑定到当前 student。</div>
 {% endif %}
+{% if deleted %}
+<div class="flash flash-success">已有案例及解析缓存已删除。</div>
+{% endif %}
 {% if error %}
 <div class="flash flash-error">{{ error }}</div>
 {% endif %}
@@ -153,7 +156,6 @@
       </div>
     </div>
 
-    <!-- 处理进度概览 -->
     <div class="info-grid">
       <div>
         <span class="info-label">当前文件</span>
@@ -169,45 +171,108 @@
       </div>
     </div>
 
-    <!-- 进度条 -->
-    {% if workspace.case_bundle.rows|length > 0 %}
-    <div style="margin-bottom: var(--space-6);">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
-        <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">处理进度</span>
-        <span style="font-size: 13px; color: var(--text-secondary);">
-          {{ workspace.case_bundle.resolved_count }} 已解析 / {{ workspace.case_bundle.understood_count }} 已理解 / {{ workspace.case_bundle.rows|length }} 总计
-        </span>
-      </div>
-      <div class="progress-bar">
-        {% set pct = (workspace.case_bundle.understood_count / workspace.case_bundle.rows|length * 100) if workspace.case_bundle.rows|length > 0 else 0 %}
-        <div class="progress-bar-fill" style="width: {{ pct }}%"></div>
-      </div>
-      <div class="progress-stats">
-        <span>视频素材：{{ workspace.case_bundle.downloaded_count }} 已下载</span>
-        <span>封面：{{ workspace.case_bundle.covered_count }} 已生成</span>
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- 上传表单 -->
     <form method="post" action="/students/{{ workspace.student.config_key }}/cases" enctype="multipart/form-data" class="upload-form">
       <input type="file" name="case_file" accept=".csv,.tsv,.xlsx" required>
       <button class="button" type="submit">上传并绑定案例表</button>
     </form>
 
-    <!-- 操作按钮 -->
     <div class="actions" style="margin-bottom: var(--space-6);">
-      <form method="post" action="/students/{{ workspace.student.config_key }}/cases/resolve">
-        <button class="button button-secondary" type="submit">解析 gid 基础内容</button>
+      <button
+        id="case-process-button"
+        class="button"
+        type="button"
+        onclick="startCaseProcessing('{{ workspace.student.config_key }}')"
+        {% if workspace.case_bundle.rows|length == 0 %}disabled{% endif %}
+      >
+        {% if workspace.latest_case_process and workspace.latest_case_process.status == "running" %}
+          处理中...
+        {% else %}
+          开始解析
+        {% endif %}
+      </button>
+      {% if workspace.case_bundle.file or workspace.case_bundle.rows|length > 0 %}
+      <form method="post" action="/students/{{ workspace.student.config_key }}/cases/delete" onsubmit="return confirm('确认删除当前 student 的案例文件和解析缓存吗？');">
+        <button class="button button-secondary" type="submit" {% if workspace.latest_case_process and workspace.latest_case_process.status == "running" %}disabled{% endif %}>删除已有案例</button>
       </form>
-      <form method="post" action="/students/{{ workspace.student.config_key }}/cases/understand">
-        <button class="button" type="submit">生成豆包理解结果</button>
-      </form>
+      {% endif %}
+      <span class="hint">点一次后自动完成 gid 解析、本地下载和模型理解。</span>
     </div>
 
     {% if workspace.case_bundle.error %}
     <div class="flash flash-error">{{ workspace.case_bundle.error }}</div>
     {% endif %}
+
+    <div class="panel" id="case-process-panel" style="margin-bottom: var(--space-6);">
+      <div class="panel-header">
+        <div>
+          <h2>解析进度</h2>
+          <p id="case-process-summary-text">
+            {% if workspace.latest_case_process %}
+              {{ workspace.latest_case_process.summary.completed_cases }} 已完成 / {{ workspace.latest_case_process.total_cases }} 总计
+            {% else %}
+              {{ workspace.case_bundle.resolved_count }} 已解析 / {{ workspace.case_bundle.understood_count }} 已理解 / {{ workspace.case_bundle.rows|length }} 总计
+            {% endif %}
+          </p>
+        </div>
+        <div class="header-actions">
+          {% set process_status = workspace.latest_case_process.status if workspace.latest_case_process else "idle" %}
+          <span id="case-process-status" class="badge {% if process_status == 'running' %}badge-accent{% elif process_status == 'completed' %}badge-success{% elif process_status == 'completed_with_errors' or process_status == 'failed' %}badge-error{% endif %}">
+            {{ process_status }}
+          </span>
+        </div>
+      </div>
+
+      {% set process_pct = workspace.latest_case_process.progress_percent if workspace.latest_case_process else ((workspace.case_bundle.understood_count / workspace.case_bundle.rows|length * 100) if workspace.case_bundle.rows|length > 0 else 0) %}
+      <div style="margin-bottom: var(--space-4);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+          <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">总进度</span>
+          <span id="case-process-percent" style="font-size: 13px; color: var(--text-secondary);">{{ process_pct }}%</span>
+        </div>
+        <div class="progress-bar">
+          <div id="case-process-fill" class="progress-bar-fill" style="width: {{ process_pct }}%"></div>
+        </div>
+      </div>
+
+      <div class="progress-stats" id="case-process-stats">
+        {% if workspace.latest_case_process %}
+          <span>基础解析：{{ workspace.latest_case_process.summary.resolved_cases }}</span>
+          <span>素材就绪：{{ workspace.latest_case_process.summary.assets_ready_cases }}</span>
+          <span>模型理解：{{ workspace.latest_case_process.summary.understood_cases }}</span>
+          <span>失败：{{ workspace.latest_case_process.summary.failed_cases }}</span>
+        {% else %}
+          <span>基础解析：{{ workspace.case_bundle.resolved_count }}</span>
+          <span>素材就绪：{{ workspace.case_bundle.downloaded_count }}</span>
+          <span>模型理解：{{ workspace.case_bundle.understood_count }}</span>
+          <span>失败：0</span>
+        {% endif %}
+      </div>
+
+      <p class="hint" id="case-process-meta">
+        {% if workspace.latest_case_process %}
+          开始于 {{ workspace.latest_case_process.started_at }}{% if workspace.latest_case_process.finished_at %}，结束于 {{ workspace.latest_case_process.finished_at }}{% endif %}
+        {% else %}
+          上传案例表后，只需点一次“开始解析”。
+        {% endif %}
+      </p>
+
+      <div class="memory-list" id="case-process-case-list">
+        {% if workspace.latest_case_process %}
+          {% for case in workspace.latest_case_process.cases[:10] %}
+          <article class="memory-card">
+            <div class="memory-meta">
+              <strong>{{ case.title or ("案例 " ~ case.index) }}</strong>
+              <span>{{ case.stage }}</span>
+            </div>
+            <p>{{ case.message or "等待处理" }}</p>
+          </article>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">
+            <p>还没有开始处理任务。</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
 
     <!-- 案例预览 -->
     {% if workspace.case_bundle.preview_rows %}
@@ -310,6 +375,10 @@
 </div>
 
 <script>
+const initialCaseProcess = {{ workspace.latest_case_process | tojson }};
+let caseProcessPoller = null;
+let hasReloadedAfterProcess = false;
+
 function switchTab(tabId) {
   // 切换 Tab 按钮状态
   document.querySelectorAll('.tab-link').forEach(link => {
@@ -331,11 +400,155 @@ function addTopic() {
   document.getElementById('topic-list').appendChild(clone);
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function caseProcessBadgeClass(status) {
+  if (status === 'running') return 'badge badge-accent';
+  if (status === 'completed') return 'badge badge-success';
+  if (status === 'completed_with_errors' || status === 'failed') return 'badge badge-error';
+  return 'badge';
+}
+
+function renderCaseProcess(job) {
+  const statusEl = document.getElementById('case-process-status');
+  const percentEl = document.getElementById('case-process-percent');
+  const fillEl = document.getElementById('case-process-fill');
+  const statsEl = document.getElementById('case-process-stats');
+  const metaEl = document.getElementById('case-process-meta');
+  const summaryEl = document.getElementById('case-process-summary-text');
+  const caseListEl = document.getElementById('case-process-case-list');
+  const buttonEl = document.getElementById('case-process-button');
+
+  if (!job) {
+    statusEl.textContent = 'idle';
+    statusEl.className = 'badge';
+    percentEl.textContent = '0%';
+    fillEl.style.width = '0%';
+    statsEl.innerHTML = '<span>基础解析：0</span><span>素材就绪：0</span><span>模型理解：0</span><span>失败：0</span>';
+    metaEl.textContent = '上传案例表后，只需点一次“开始解析”。';
+    summaryEl.textContent = '还没有开始处理任务';
+    caseListEl.innerHTML = '<div class="empty-state"><p>还没有开始处理任务。</p></div>';
+    buttonEl.disabled = {{ 'true' if workspace.case_bundle.rows|length == 0 else 'false' }};
+    buttonEl.textContent = '开始解析';
+    return;
+  }
+
+  const status = job.status || 'idle';
+  statusEl.textContent = status;
+  statusEl.className = caseProcessBadgeClass(status);
+  percentEl.textContent = `${job.progress_percent || 0}%`;
+  fillEl.style.width = `${job.progress_percent || 0}%`;
+
+  const summary = job.summary || {};
+  summaryEl.textContent = `${summary.completed_cases || 0} 已完成 / ${job.total_cases || 0} 总计`;
+  statsEl.innerHTML = `
+    <span>基础解析：${summary.resolved_cases || 0}</span>
+    <span>素材就绪：${summary.assets_ready_cases || 0}</span>
+    <span>模型理解：${summary.understood_cases || 0}</span>
+    <span>失败：${summary.failed_cases || 0}</span>
+  `;
+
+  const finishedText = job.finished_at ? `，结束于 ${job.finished_at}` : '';
+  metaEl.textContent = `开始于 ${job.started_at || '--'}${finishedText}`;
+
+  const cases = (job.cases || []).slice(0, 10);
+  if (!cases.length) {
+    caseListEl.innerHTML = '<div class="empty-state"><p>还没有案例处理明细。</p></div>';
+  } else {
+    caseListEl.innerHTML = cases.map(item => `
+      <article class="memory-card">
+        <div class="memory-meta">
+          <strong>${escapeHtml(item.title || `案例 ${item.index}`)}</strong>
+          <span>${escapeHtml(item.stage || item.status || 'waiting')}</span>
+        </div>
+        <p>${escapeHtml(item.message || '等待处理')}</p>
+      </article>
+    `).join('');
+  }
+
+  buttonEl.disabled = status === 'running';
+  buttonEl.textContent = status === 'running' ? '处理中...' : '开始解析';
+}
+
+async function fetchLatestCaseProcess(configKey) {
+  const response = await fetch(`/students/${configKey}/cases/process/latest`, {
+    headers: { 'Accept': 'application/json' }
+  });
+  const payload = await response.json();
+  return payload.job || null;
+}
+
+function stopCaseProcessPolling() {
+  if (caseProcessPoller) {
+    window.clearTimeout(caseProcessPoller);
+    caseProcessPoller = null;
+  }
+}
+
+async function pollCaseProcess(configKey) {
+  try {
+    const job = await fetchLatestCaseProcess(configKey);
+    renderCaseProcess(job);
+
+    if (job && job.status === 'running') {
+      caseProcessPoller = window.setTimeout(() => pollCaseProcess(configKey), 1500);
+      return;
+    }
+
+    stopCaseProcessPolling();
+    if (job && !hasReloadedAfterProcess) {
+      hasReloadedAfterProcess = true;
+      window.setTimeout(() => window.location.reload(), 800);
+    }
+  } catch (error) {
+    stopCaseProcessPolling();
+    alert(`获取处理进度失败：${error.message}`);
+  }
+}
+
+async function startCaseProcessing(configKey) {
+  const buttonEl = document.getElementById('case-process-button');
+  buttonEl.disabled = true;
+  buttonEl.textContent = '处理中...';
+
+  try {
+    const response = await fetch(`/students/${configKey}/cases/process`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' }
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || '启动处理任务失败');
+    }
+
+    hasReloadedAfterProcess = false;
+    renderCaseProcess(payload);
+    stopCaseProcessPolling();
+    pollCaseProcess(configKey);
+  } catch (error) {
+    buttonEl.disabled = false;
+    buttonEl.textContent = '开始解析';
+    alert(error.message);
+  }
+}
+
 // 页面加载时根据 hash 恢复 tab
 window.addEventListener('DOMContentLoaded', () => {
   const hash = window.location.hash.replace('#', '');
   if (hash && ['basic', 'training', 'cases', 'memory'].includes(hash)) {
     switchTab(hash);
+  }
+
+  renderCaseProcess(initialCaseProcess);
+  if (initialCaseProcess && initialCaseProcess.status === 'running') {
+    pollCaseProcess('{{ workspace.student.config_key }}');
   }
 });
 </script>

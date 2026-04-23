@@ -1,5 +1,6 @@
 import csv
 import os
+import shutil
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from case_loader import load_case_studies, read_case_columns
+from services.case_process_store import CaseProcessStore
 from services.dataset_content_store import DatasetContentStore
 from services.run_store import RunStore
 
@@ -17,6 +19,7 @@ class ConfigStore:
         self.base_dir = self.config_file.parent
         self.run_store = RunStore(self.base_dir)
         self.dataset_store = DatasetContentStore(self.base_dir)
+        self.case_process_store = CaseProcessStore(self.base_dir)
 
     def load(self):
         with self.config_file.open("r", encoding="utf-8") as f:
@@ -66,6 +69,7 @@ class ConfigStore:
             "student": student,
             "training_config": training_config,
             "case_bundle": case_bundle,
+            "latest_case_process": self.case_process_store.latest_for_student(config_key),
             "recent_memories": recent_memories,
             "stats": {
                 "case_count": len(case_bundle["rows"]),
@@ -117,6 +121,24 @@ class ConfigStore:
 
         self.save(config)
         return str(target_path.relative_to(self.base_dir))
+
+    def delete_case_file(self, config_key):
+        latest_process = self.case_process_store.latest_for_student(config_key)
+        if latest_process and latest_process.get("status") == "running":
+            raise ValueError("当前案例仍在处理中，请等待完成后再删除")
+
+        config = self.load()
+
+        case_studies = config.setdefault("case_studies", {})
+        case_entry = case_studies.pop(config_key, None)
+        self.save(config)
+
+        dataset_dir = self.dataset_store.dataset_dir(config_key)
+        if dataset_dir.exists():
+            shutil.rmtree(dataset_dir, ignore_errors=True)
+
+        self.case_process_store.delete_for_student(config_key)
+        return case_entry
 
     def _get_student(self, config, config_key):
         for student in config.get("students", []):

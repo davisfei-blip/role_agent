@@ -2,10 +2,11 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from services.case_processing_service import CaseProcessingService
 from services.config_store import ConfigStore
 from services.dataset_content_store import DatasetContentStore
 from services.douyin_media_store import DouyinMediaStore
@@ -26,6 +27,7 @@ douyin_media_store = DouyinMediaStore(dataset_store)
 douyin_understander = DouyinUnderstander(store.get_settings()["model_name"])
 run_store = RunStore(BASE_DIR)
 training_runner = TrainingRunner(BASE_DIR)
+case_processing_service = CaseProcessingService(BASE_DIR)
 
 
 def _bool_from_form(value):
@@ -127,6 +129,7 @@ def student_workspace(request: Request, config_key: str):
         workspace=workspace,
         saved=request.query_params.get("saved"),
         uploaded=request.query_params.get("uploaded"),
+        deleted=request.query_params.get("deleted"),
         error=request.query_params.get("error"),
         page_title=workspace["student"]["name"],
         active_config_key=config_key,
@@ -193,55 +196,37 @@ async def upload_cases(config_key: str, case_file: UploadFile = File(...)):
     return RedirectResponse(f"/students/{config_key}?uploaded=1", status_code=303)
 
 
-@app.post("/students/{config_key}/cases/resolve")
-async def resolve_cases(config_key: str):
+@app.post("/students/{config_key}/cases/delete")
+async def delete_cases(config_key: str):
     try:
         workspace = store.get_student_workspace(config_key)
         if not workspace:
             raise ValueError("未找到 student")
-
-        for row in workspace["case_bundle"]["rows"]:
-            gid = row.get("gid", "")
-            if not gid:
-                continue
-            extracted = douyin_resolver.resolve_gid(gid)
-            dataset_store.save_extract(config_key, gid, extracted)
-            douyin_media_store.ensure_local_assets(config_key, gid, extracted)
+        store.delete_case_file(config_key)
     except Exception as exc:
         return RedirectResponse(f"/students/{config_key}?error={str(exc)}", status_code=303)
 
-    return RedirectResponse(f"/students/{config_key}?saved=resolve", status_code=303)
+    return RedirectResponse(f"/students/{config_key}?deleted=1", status_code=303)
 
 
-@app.post("/students/{config_key}/cases/understand")
-async def understand_cases(config_key: str):
+@app.post("/students/{config_key}/cases/process")
+async def start_case_process(config_key: str):
     try:
         workspace = store.get_student_workspace(config_key)
         if not workspace:
             raise ValueError("未找到 student")
-
-        understander = DouyinUnderstander(store.get_settings()["model_name"])
-        for row in workspace["case_bundle"]["rows"]:
-            gid = row.get("gid", "")
-            if not gid:
-                continue
-            extracted = dataset_store.load_extract(config_key, gid)
-            if not extracted:
-                extracted = douyin_resolver.resolve_gid(gid)
-                dataset_store.save_extract(config_key, gid, extracted)
-            material_bundle = douyin_media_store.ensure_local_assets(config_key, gid, extracted)
-            try:
-                understanding = understander.understand(extracted, material_bundle=material_bundle)
-            except Exception as exc:
-                understanding = {
-                    "status": "failed",
-                    "error": str(exc),
-                }
-            dataset_store.save_understanding(config_key, gid, understanding)
+        job = case_processing_service.start(config_key)
+        return JSONResponse(job)
     except Exception as exc:
-        return RedirectResponse(f"/students/{config_key}?error={str(exc)}", status_code=303)
+        return JSONResponse({"error": str(exc)}, status_code=400)
 
-    return RedirectResponse(f"/students/{config_key}?saved=understand", status_code=303)
+
+@app.get("/students/{config_key}/cases/process/latest")
+async def latest_case_process(config_key: str):
+    job = case_processing_service.latest(config_key)
+    if not job:
+        return JSONResponse({"job": None})
+    return JSONResponse({"job": job})
 
 
 @app.post("/students/{config_key}/run/standard")
