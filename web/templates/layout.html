@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title or "Agent 训练台" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">Agent 训练台</div>
+      <nav class="nav">
+        <a href="/" class="nav-link {% if request.url.path == '/' %}is-active{% endif %}">首页</a>
+        <a href="/runs" class="nav-link {% if request.url.path.startswith('/runs') %}is-active{% endif %}">训练记录</a>
+        <a href="/settings" class="nav-link {% if request.url.path == '/settings' %}is-active{% endif %}">系统设置</a>
+        <div class="nav-section">Students</div>
+        {% for item in nav_students %}
+        <a href="/students/{{ item.config_key }}" class="nav-link {% if active_config_key == item.config_key %}is-active{% endif %}">
+          {{ item.name }}
+        </a>
+        {% endfor %}
+      </nav>
+    </aside>
+    <main class="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

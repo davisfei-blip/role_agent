@@ -1,5 +1,7 @@
+from pathlib import Path
+
 import yaml
-import os
+from case_loader import load_case_studies
 
 
 class Config:
@@ -12,8 +14,40 @@ class Config:
         return cls._instance
 
     def _load_config(self, config_file):
-        with open(config_file, 'r', encoding='utf-8') as f:
+        self._config_file = Path(config_file).resolve()
+        self._case_studies_cache = {}
+
+        with self._config_file.open('r', encoding='utf-8') as f:
             self._config = yaml.safe_load(f)
+
+    def reload(self):
+        self._load_config(self._config_file)
+        return self
+
+    def _resolve_path(self, file_path):
+        path = Path(file_path)
+        if not path.is_absolute():
+            path = self._config_file.parent / path
+        return path
+
+    def _load_case_studies_from_file(self, file_path):
+        resolved_path = self._resolve_path(file_path)
+        cache_key = str(resolved_path)
+
+        if cache_key in self._case_studies_cache:
+            return self._case_studies_cache[cache_key]
+
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"未找到案例表格文件：{resolved_path}")
+
+        if resolved_path.suffix.lower() not in {".csv", ".tsv", ".xlsx"}:
+            raise ValueError(
+                f"暂不支持的案例表格格式：{resolved_path.suffix}，目前仅支持 .csv / .tsv / .xlsx"
+            )
+
+        case_studies = load_case_studies(resolved_path)
+        self._case_studies_cache[cache_key] = case_studies
+        return case_studies
 
     @property
     def model_name(self):
@@ -50,4 +84,18 @@ class Config:
 
     def get_case_studies(self, config_key):
         """根据config_key获取案例数据"""
-        return self._config.get("case_studies", {}).get(config_key, [])
+        case_studies_config = self._config.get("case_studies", {}).get(config_key, [])
+
+        if isinstance(case_studies_config, list):
+            return case_studies_config
+
+        if isinstance(case_studies_config, str):
+            return self._load_case_studies_from_file(case_studies_config)
+
+        if isinstance(case_studies_config, dict):
+            file_path = case_studies_config.get("file")
+            if not file_path:
+                return []
+            return self._load_case_studies_from_file(file_path)
+
+        return []

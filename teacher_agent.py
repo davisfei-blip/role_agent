@@ -9,6 +9,10 @@ load_dotenv()
 config = Config()
 
 
+def refresh_runtime_state():
+    config.reload()
+
+
 def get_openai_client():
     return OpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),

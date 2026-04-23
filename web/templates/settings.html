@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>系统设置</h1>
+    <p>这些设置会影响所有 teacher / student 的默认运行环境。</p>
+  </div>
+</section>
+
+{% if saved %}
+<div class="flash flash-success">设置已保存。</div>
+{% endif %}
+
+<form method="post" action="/settings" class="panel form-panel">
+  <div class="field">
+    <label for="model_name">模型名称</label>
+    <input id="model_name" name="model_name" value="{{ settings.model_name }}">
+  </div>
+
+  <div class="field checkbox-field">
+    <label><input type="checkbox" name="search_enabled" {% if settings.search_enabled %}checked{% endif %}> 启用搜索</label>
+  </div>
+
+  <div class="field">
+    <label for="search_num_results">搜索结果数</label>
+    <input id="search_num_results" type="number" min="1" name="search_num_results" value="{{ settings.search_num_results }}">
+  </div>
+
+  <div class="field checkbox-field">
+    <label><input type="checkbox" name="memory_enabled" {% if settings.memory_enabled %}checked{% endif %}> 启用记忆</label>
+  </div>
+
+  <div class="field checkbox-field">
+    <label><input type="checkbox" name="memory_auto_save" {% if settings.memory_auto_save %}checked{% endif %}> 自动保存记忆</label>
+  </div>
+
+  <div class="field">
+    <label for="memory_dir">记忆目录</label>
+    <input id="memory_dir" name="memory_dir" value="{{ settings.memory_dir }}">
+  </div>
+
+  <div class="actions">
+    <button class="button" type="submit">保存设置</button>
+  </div>
+</form>
+{% endblock %}

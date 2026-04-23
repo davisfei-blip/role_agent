@@ -1,0 +1,107 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>训练详情</h1>
+    <p>{{ run.student_name }} · {{ "常规训练" if run.mode == "standard" else "案例纠偏" }} · {{ run.finished_at or run.started_at }}</p>
+  </div>
+  <div class="header-actions">
+    <span class="badge {% if run.status == 'completed' %}badge-success{% elif run.status == 'failed' %}badge-error{% endif %}">{{ run.status }}</span>
+    <span class="badge">{{ run.config_key }}</span>
+  </div>
+</section>
+
+{% if run.error %}
+<div class="flash flash-error">{{ run.error }}</div>
+{% endif %}
+
+<section class="panel">
+  <div class="info-grid">
+    <div>
+      <span class="info-label">开始时间</span>
+      <strong>{{ run.started_at }}</strong>
+    </div>
+    <div>
+      <span class="info-label">结束时间</span>
+      <strong>{{ run.finished_at }}</strong>
+    </div>
+    <div>
+      <span class="info-label">模式</span>
+      <strong>{{ "常规训练" if run.mode == "standard" else "案例纠偏" }}</strong>
+    </div>
+    <div>
+      <span class="info-label">摘要</span>
+      <strong>
+        {% if run.mode == "standard" %}
+          平均分 {{ run.summary.average_score if run.summary else "--" }}
+        {% else %}
+          已处理 {{ run.summary.processed_cases if run.summary else 0 }} / {{ run.summary.total_cases if run.summary else 0 }}
+        {% endif %}
+      </strong>
+    </div>
+  </div>
+</section>
+
+{% if run.mode == "standard" %}
+  {% for topic in run.topics %}
+  <section class="panel">
+    <div class="panel-header">
+      <h2>{{ topic.topic_name }}</h2>
+      <p>{{ topic.description }}</p>
+    </div>
+    {% for iteration in topic.iterations %}
+    <div class="topic-card">
+      <div class="topic-card-header">
+        <h3>第 {{ iteration.iteration }} 轮</h3>
+      </div>
+      <p class="hint">{{ iteration.knowledge[:220] ~ ('...' if iteration.knowledge|length > 220 else '') }}</p>
+      {% for question in iteration.questions %}
+      <div class="run-block">
+        <strong>问题</strong>
+        <p>{{ question.question }}</p>
+        <strong>得分</strong>
+        <p>{{ question.score }} · {{ "通过" if question.passed else "未通过" }}</p>
+        <strong>回答</strong>
+        <pre>{{ question.answer }}</pre>
+        <strong>评价</strong>
+        <pre>{{ question.evaluation }}</pre>
+        <strong>反馈</strong>
+        <pre>{{ question.feedback }}</pre>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endfor %}
+{% else %}
+  <section class="panel">
+    <div class="panel-header">
+      <h2>案例处理结果</h2>
+      <p>共 {{ run.cases|length }} 个案例</p>
+    </div>
+    {% for case in run.cases %}
+    <div class="topic-card">
+      <div class="memory-meta">
+        <strong>{{ case.title }}</strong>
+        <span class="badge {% if case.status == 'completed' %}badge-success{% else %}badge-error{% endif %}">{{ case.status }}</span>
+      </div>
+      {% if case.gid %}<p class="hint">gid: {{ case.gid }}</p>{% endif %}
+      <p><strong>用户判断：</strong>{{ case.user_judgment }}</p>
+      <p><strong>用户理由：</strong>{{ case.user_reason }}</p>
+      {% if case.status == "completed" %}
+      <div class="case-block">
+        <strong>学生判断</strong>
+        <pre>{{ case.student_judgment }}</pre>
+      </div>
+      <div class="case-block">
+        <strong>学习总结</strong>
+        <pre>{{ case.knowledge }}</pre>
+      </div>
+      {% else %}
+      <p class="hint">{{ case.reason }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}

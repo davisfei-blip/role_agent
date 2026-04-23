@@ -3,6 +3,17 @@ import sys
 from teacher_agent import TeacherAgent
 from student_agent import create_all_students
 from config import Config
+from services.dataset_content_store import DatasetContentStore
+from services.douyin_media_store import DouyinMediaStore
+from services.douyin_resolver import DouyinResolver
+from services.douyin_understander import DouyinUnderstander
+
+
+base_dir = os.path.dirname(os.path.abspath(__file__))
+dataset_store = DatasetContentStore(base_dir)
+douyin_resolver = DouyinResolver()
+douyin_media_store = DouyinMediaStore(dataset_store)
+douyin_understander = DouyinUnderstander(Config().model_name)
 
 
 def print_separator(title=""):
@@ -74,13 +85,51 @@ def case_study_train(student, case_studies, config_key):
     print(f"\n📋 找到 {len(case_studies)} 个案例\n")
 
     for idx, case in enumerate(case_studies, 1):
+        title = case.get('title') or f"GID: {case.get('gid', '未知')}"
+        content = case.get('content', '')
+        resolved = dataset_store.load_extract(config_key, case.get('gid', '')) if case.get('gid') else None
+        understanding = dataset_store.load_understanding(config_key, case.get('gid', '')) if case.get('gid') else None
+
+        if not resolved and case.get('gid'):
+            try:
+                resolved = douyin_resolver.resolve_gid(case.get('gid'))
+                dataset_store.save_extract(config_key, case.get('gid'), resolved)
+            except Exception as exc:
+                print_separator(f"案例 {idx}")
+                print(f"\n🧾 GID: {case.get('gid', '未知')}")
+                print(f"⚠️  通过 gid 拉取内容失败：{exc}")
+                continue
+
+        if not understanding and resolved and case.get('gid'):
+            try:
+                material_bundle = douyin_media_store.ensure_local_assets(config_key, case.get('gid'), resolved)
+                understanding = douyin_understander.understand(resolved, material_bundle=material_bundle)
+                dataset_store.save_understanding(config_key, case.get('gid'), understanding)
+            except Exception as exc:
+                print_separator(f"案例 {idx}")
+                print(f"\n🧾 GID: {case.get('gid', '未知')}")
+                print(f"⚠️  豆包理解失败，将回退到基础解析内容：{exc}")
+
+        if understanding and understanding.get('parsed'):
+            parsed = understanding['parsed']
+            title = parsed.get('title') or title
+            content = parsed.get('content', '') or content
+        elif resolved:
+            title = resolved.get('title') or title
+            content = resolved.get('content', '') or content
+
+        if not content:
+            print_separator(f"案例 {idx}")
+            print(f"\n🧾 案例缺少 title/content，且没有可用 gid：{case.get('gid', '未知')}")
+            continue
+
         print_separator(f"案例 {idx}")
-        print(f"\n📝 案例标题：{case['title']}")
-        print(f"📄 案例内容：{case['content']}")
+        print(f"\n📝 案例标题：{title}")
+        print(f"📄 案例内容：{content}")
 
         # 学生先判断
         print("\n🤖 学生正在判断...")
-        student_judgment = student.judge_case(case['title'], case['content'])
+        student_judgment = student.judge_case(title, content)
         print(f"   学生判断：\n{student_judgment}")
 
         # 展示用户的正确判断
@@ -94,7 +143,7 @@ def case_study_train(student, case_studies, config_key):
         # 学生学习纠偏
         print("\n📚 学生正在学习纠偏...")
         knowledge = student.learn_from_user_feedback(
-            case['title'], case['content'],
+            title, content,
             case['user_judgment'], case['user_reason'],
             student_judgment
         )

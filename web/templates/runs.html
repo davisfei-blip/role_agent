@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>训练记录</h1>
+    <p>查看每次常规训练和案例纠偏的结果。</p>
+  </div>
+</section>
+
+<section class="panel">
+  {% if runs %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>Student</th>
+          <th>模式</th>
+          <th>状态</th>
+          <th>摘要</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr>
+          <td>{{ run.finished_at or run.started_at }}</td>
+          <td>{{ run.student_name }}</td>
+          <td>
+            <span class="badge {% if run.mode == 'standard' %}badge-accent{% else %}badge-success{% endif %}">
+              {{ "常规训练" if run.mode == "standard" else "案例纠偏" }}
+            </span>
+          </td>
+          <td>
+            <span class="badge {% if run.status == 'completed' %}badge-success{% elif run.status == 'failed' %}badge-error{% else %}{% endif %}">
+              {{ run.status }}
+            </span>
+          </td>
+          <td>
+            {% if run.mode == "standard" %}
+              平均分：{{ run.summary.average_score if run.summary else "--" }}
+            {% else %}
+              处理：{{ run.summary.processed_cases if run.summary else 0 }} / {{ run.summary.total_cases if run.summary else 0 }}
+            {% endif %}
+          </td>
+          <td><a class="button button-sm" href="/runs/{{ run.run_id }}">查看详情</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <p>还没有训练记录。</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

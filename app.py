@@ -1,0 +1,262 @@
+from pathlib import Path
+from typing import List, Optional
+
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from services.config_store import ConfigStore
+from services.dataset_content_store import DatasetContentStore
+from services.douyin_media_store import DouyinMediaStore
+from services.douyin_resolver import DouyinResolver
+from services.douyin_understander import DouyinUnderstander
+from services.run_store import RunStore
+from services.training_runner import TrainingRunner
+
+
+BASE_DIR = Path(__file__).resolve().parent
+app = FastAPI(title="Agent 训练台")
+app.mount("/static", StaticFiles(directory=BASE_DIR / "web" / "static"), name="static")
+templates = Jinja2Templates(directory=str(BASE_DIR / "web" / "templates"))
+store = ConfigStore(BASE_DIR / "config.yaml")
+dataset_store = DatasetContentStore(BASE_DIR)
+douyin_resolver = DouyinResolver()
+douyin_media_store = DouyinMediaStore(dataset_store)
+douyin_understander = DouyinUnderstander(store.get_settings()["model_name"])
+run_store = RunStore(BASE_DIR)
+training_runner = TrainingRunner(BASE_DIR)
+
+
+def _bool_from_form(value):
+    return value == "on"
+
+
+def render_page(request: Request, template_name: str, **context):
+    payload = {
+        "request": request,
+        "nav_students": store.list_student_workspaces(),
+        "active_config_key": context.get("active_config_key"),
+    }
+    payload.update(context)
+    return templates.TemplateResponse(template_name, payload)
+
+
+@app.get("/")
+def home(request: Request):
+    students = store.list_student_workspaces()
+    stats = {
+        "student_count": len(students),
+        "students_with_cases": len([item for item in students if item["case_count"] > 0]),
+        "recent_updates": len([item for item in students if item["recent_training_time"]]),
+    }
+    return render_page(
+        request,
+        "index.html",
+        students=students,
+        stats=stats,
+        page_title="首页",
+    )
+
+
+@app.get("/settings")
+def settings_page(request: Request):
+    return render_page(
+        request,
+        "settings.html",
+        settings=store.get_settings(),
+        saved=request.query_params.get("saved"),
+        page_title="系统设置",
+    )
+
+
+@app.get("/runs")
+def runs_page(request: Request):
+    runs = run_store.list_runs()
+    return render_page(
+        request,
+        "runs.html",
+        runs=runs,
+        page_title="训练记录",
+    )
+
+
+@app.get("/runs/{run_id}")
+def run_detail(request: Request, run_id: str):
+    run = run_store.get(run_id)
+    if not run:
+        return RedirectResponse("/runs?missing=1", status_code=303)
+    return render_page(
+        request,
+        "run_detail.html",
+        run=run,
+        page_title=f"训练详情 · {run.get('student_name', '')}",
+        active_config_key=run.get("config_key"),
+    )
+
+
+@app.post("/settings")
+async def save_settings(
+    model_name: str = Form(...),
+    search_enabled: Optional[str] = Form(None),
+    search_num_results: int = Form(...),
+    memory_enabled: Optional[str] = Form(None),
+    memory_auto_save: Optional[str] = Form(None),
+    memory_dir: str = Form(...),
+):
+    store.update_settings({
+        "model_name": model_name,
+        "search_enabled": _bool_from_form(search_enabled),
+        "search_num_results": search_num_results,
+        "memory_enabled": _bool_from_form(memory_enabled),
+        "memory_auto_save": _bool_from_form(memory_auto_save),
+        "memory_dir": memory_dir,
+    })
+    return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+@app.get("/students/{config_key}")
+def student_workspace(request: Request, config_key: str):
+    workspace = store.get_student_workspace(config_key)
+    if not workspace:
+        return RedirectResponse("/?missing=1", status_code=303)
+
+    return render_page(
+        request,
+        "student_workspace.html",
+        workspace=workspace,
+        saved=request.query_params.get("saved"),
+        uploaded=request.query_params.get("uploaded"),
+        error=request.query_params.get("error"),
+        page_title=workspace["student"]["name"],
+        active_config_key=config_key,
+    )
+
+
+@app.post("/students/{config_key}/basic")
+async def save_student_basic(
+    config_key: str,
+    name: str = Form(...),
+    role: str = Form(...),
+    prompt_file: str = Form(...),
+    default_prompt: str = Form(""),
+):
+    store.update_student_basic(config_key, {
+        "name": name,
+        "role": role,
+        "prompt_file": prompt_file,
+        "default_prompt": default_prompt,
+    })
+    return RedirectResponse(f"/students/{config_key}?saved=basic", status_code=303)
+
+
+@app.post("/students/{config_key}/training")
+async def save_training_config(
+    config_key: str,
+    role: str = Form(...),
+    max_iterations: int = Form(...),
+    topic_name: List[str] = Form([]),
+    topic_description: List[str] = Form([]),
+    topic_questions: List[str] = Form([]),
+):
+    topics = []
+    for index, name in enumerate(topic_name):
+        title = name.strip()
+        description = topic_description[index].strip() if index < len(topic_description) else ""
+        questions_text = topic_questions[index] if index < len(topic_questions) else ""
+        questions = [item.strip() for item in questions_text.splitlines() if item.strip()]
+
+        if not title and not description and not questions:
+            continue
+
+        topics.append({
+            "name": title or f"Topic {index + 1}",
+            "description": description,
+            "questions": questions,
+        })
+
+    store.update_training_config(config_key, {
+        "role": role,
+        "max_iterations": max_iterations,
+        "topics": topics,
+    })
+    return RedirectResponse(f"/students/{config_key}?saved=training", status_code=303)
+
+
+@app.post("/students/{config_key}/cases")
+async def upload_cases(config_key: str, case_file: UploadFile = File(...)):
+    try:
+        store.update_case_file(config_key, case_file)
+    except Exception as exc:
+        return RedirectResponse(f"/students/{config_key}?error={str(exc)}", status_code=303)
+
+    return RedirectResponse(f"/students/{config_key}?uploaded=1", status_code=303)
+
+
+@app.post("/students/{config_key}/cases/resolve")
+async def resolve_cases(config_key: str):
+    try:
+        workspace = store.get_student_workspace(config_key)
+        if not workspace:
+            raise ValueError("未找到 student")
+
+        for row in workspace["case_bundle"]["rows"]:
+            gid = row.get("gid", "")
+            if not gid:
+                continue
+            extracted = douyin_resolver.resolve_gid(gid)
+            dataset_store.save_extract(config_key, gid, extracted)
+            douyin_media_store.ensure_local_assets(config_key, gid, extracted)
+    except Exception as exc:
+        return RedirectResponse(f"/students/{config_key}?error={str(exc)}", status_code=303)
+
+    return RedirectResponse(f"/students/{config_key}?saved=resolve", status_code=303)
+
+
+@app.post("/students/{config_key}/cases/understand")
+async def understand_cases(config_key: str):
+    try:
+        workspace = store.get_student_workspace(config_key)
+        if not workspace:
+            raise ValueError("未找到 student")
+
+        understander = DouyinUnderstander(store.get_settings()["model_name"])
+        for row in workspace["case_bundle"]["rows"]:
+            gid = row.get("gid", "")
+            if not gid:
+                continue
+            extracted = dataset_store.load_extract(config_key, gid)
+            if not extracted:
+                extracted = douyin_resolver.resolve_gid(gid)
+                dataset_store.save_extract(config_key, gid, extracted)
+            material_bundle = douyin_media_store.ensure_local_assets(config_key, gid, extracted)
+            try:
+                understanding = understander.understand(extracted, material_bundle=material_bundle)
+            except Exception as exc:
+                understanding = {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            dataset_store.save_understanding(config_key, gid, understanding)
+    except Exception as exc:
+        return RedirectResponse(f"/students/{config_key}?error={str(exc)}", status_code=303)
+
+    return RedirectResponse(f"/students/{config_key}?saved=understand", status_code=303)
+
+
+@app.post("/students/{config_key}/run/standard")
+async def run_standard_training(config_key: str):
+    try:
+        run = training_runner.run_standard_training(config_key)
+        return RedirectResponse(f"/runs/{run['run_id']}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f"/students/{config_key}?error={str(exc)}", status_code=303)
+
+
+@app.post("/students/{config_key}/run/case")
+async def run_case_training(config_key: str):
+    try:
+        run = training_runner.run_case_training(config_key)
+        return RedirectResponse(f"/runs/{run['run_id']}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f"/students/{config_key}?error={str(exc)}", status_code=303)

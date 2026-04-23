@@ -14,6 +14,12 @@ search_tool = SearchTool()
 memory_manager = MemoryManager(config.memory_dir)
 
 
+def refresh_runtime_state():
+    global memory_manager
+    config.reload()
+    memory_manager = MemoryManager(config.memory_dir)
+
+
 def get_openai_client():
     return OpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),

@@ -1,154 +1,96 @@
-# 老师Agent考点配置
-
-# 模型配置
 model:
-  name: "ep-20260417115335-7mtct"
-
-# 搜索功能配置
+  name: ep-20260417115335-7mtct
 search:
-  enabled: true  # 是否启用搜索功能
-  num_results: 5  # 每次搜索返回的结果数量
-
-# 记忆功能配置
+  enabled: true
+  num_results: 5
 memory:
-  enabled: true  # 是否启用记忆功能
-  auto_save: true  # 是否自动保存记忆
-  memory_dir: "memory"  # 记忆文件存储目录
-
-# 案例纠偏数据配置
+  enabled: true
+  auto_save: true
+  memory_dir: memory
 case_studies:
   content_judge:
-    - title: "一夜暴富！下载这个APP赚百万！"
-      content: "视频展示虚假收益截图，声称下载APP就能日赚万元"
-      user_judgment: "有问题"  # 你的判断
-      user_reason: "虚假宣传，夸大收益"  # 你的理由
-    - title: "美女教你健身"
-      content: "视频内容涉及低俗擦边球话题，衣着暴露"
-      user_judgment: "有问题"
-      user_reason: "低俗内容，不符合社区规范"
-    - title: "Python入门教程"
-      content: "正常知识分享类视频，讲解Python基础语法"
-      user_judgment: "没问题"
-      user_reason: "正常知识分享"
-    - title: "这个药包治百病！"
-      content: "夸大产品功效，宣称能治疗糖尿病、高血压等多种疾病"
-      user_judgment: "有问题"
-      user_reason: "虚假广告，夸大宣传"
-    - title: "家常红烧肉做法"
-      content: "正常美食教程，展示红烧肉的烹饪过程"
-      user_judgment: "没问题"
-      user_reason: "正常美食内容"
-
-# 学生Agent配置
+    file: case_studies/content_judge/dataset.csv
+  content_operation:
+    file: case_studies/content_operation/dataset.xlsx
+  strategy_product:
+    file: case_studies/strategy_product/dataset.xlsx
 students:
-  - name: "策略产品学生"
-    role: "互联网策略产品经理"
-    prompt_file: "prompts/strategy_product_prompt.txt"
-    default_prompt: |
-      你是一名专业的互联网策略产品经理。你的核心能力包括：
-      1. 数据驱动的产品决策
-      2. 用户需求分析与研究
-      3. 产品指标体系搭建
-      4. A/B测试设计与分析
-      5. 产品策略制定与优化
-      
-      回答问题时，请结合实际案例，体现你的专业深度和策略思维。
-    config_key: "strategy_product"
-  
-  - name: "内容运营学生"
-    role: "互联网内容运营"
-    prompt_file: "prompts/content_operation_prompt.txt"
-    default_prompt: |
-      你是一名专业的互联网内容运营专家。你的核心能力包括：
-      1. 内容策略制定与执行
-      2. 内容生产与优化
-      3. 用户内容偏好分析
-      4. 内容数据分析与效果评估
-      5. 标题和内容质量优化
-      
-      回答问题时，请结合实际运营经验，体现你的内容敏感度和运营思维。
-    config_key: "content_operation"
-
-  - name: "内容运营（标准制定方向）"
-    role: "内容质量审核与标准制定专家"
-    prompt_file: "prompts/content_judge_prompt.txt"
-    default_prompt: |
-      你是一名专业的内容质量审核与标准制定专家。你的核心能力包括：
-      1. 判断内容质量好坏，制定明确的评价标准
-      2. 分析内容的优点和缺点，给出具体改进建议
-      3. 建立内容质量评估体系，涵盖可读性、吸引力、准确性等维度
-      4. 判断内容是否符合平台规范和用户期望
-      5. 从数据和用户反馈角度评估内容效果
-      
-      回答问题时，请结合具体案例，给出清晰、可操作的判断标准和建议。
-    config_key: "content_judge"
-
-# 各学生考点配置
+- name: 策略产品专家
+  role: 互联网策略产品经理
+  prompt_file: prompts/strategy_product_prompt.txt
+  default_prompt: "你是一名专业的互联网策略产品经理。你的核心能力包括：\r\n1. 数据驱动的产品决策\r\n2. 用户需求分析与研究\r\n\
+    3. 产品指标体系搭建\r\n4. A/B测试设计与分析\r\n5. 产品策略制定与优化\r\n\r\n回答问题时，请结合实际案例，体现你的专业深度和策略思维。\r\
+    \n"
+  config_key: strategy_product
+- name: 内容运营专家
+  role: 互联网内容运营
+  prompt_file: prompts/content_operation_prompt.txt
+  default_prompt: "你是一名专业的互联网内容运营专家。你的核心能力包括：\r\n1. 内容策略制定与执行\r\n2. 内容生产与优化\r\n3.\
+    \ 用户内容偏好分析\r\n4. 内容数据分析与效果评估\r\n5. 标题和内容质量优化\r\n\r\n回答问题时，请结合实际运营经验，体现你的内容敏感度和运营思维。\r\
+    \n"
+  config_key: content_operation
+- name: 内容运营专家（标准制定方向）
+  role: 内容质量审核与标准制定专家
+  prompt_file: prompts/content_judge_prompt.txt
+  default_prompt: "你是一名专业的内容质量审核与标准制定专家。你的核心能力包括：\r\n1. 判断内容质量好坏，制定明确的评价标准\r\n2. 分析内容的优点和缺点，给出具体改进建议\r\
+    \n3. 建立内容质量评估体系，涵盖可读性、吸引力、准确性等维度\r\n4. 判断内容是否符合平台规范和用户期望\r\n5. 从数据和用户反馈角度评估内容效果\r\
+    \n\r\n回答问题时，请结合具体案例，给出清晰、可操作的判断标准和建议。\r\n"
+  config_key: content_judge
 strategy_product:
-  role: "互联网策略产品经理"
+  role: 互联网策略产品经理
   max_iterations: 3
   topics:
-    - name: "需求分析与用户研究"
-      description: "如何进行互联网产品的需求分析和用户研究"
-      questions:
-        - "请简述策略产品经理进行用户需求分析的核心方法论"
-        - "如何利用数据驱动产品决策，请举例说明"
-    - name: "数据指标体系建设"
-      description: "如何搭建产品的数据指标体系"
-      questions:
-        - "请说明核心指标（如DAU、留存率）的定义和计算方式"
-        - "如何通过指标体系发现产品问题"
-    - name: "A/B测试"
-      description: "如何设计和分析A/B测试"
-      questions:
-        - "请简述A/B测试的流程和关键注意事项"
-        - "如何判断A/B测试结果是否显著"
-
+  - name: 需求分析与用户研究
+    description: 如何进行互联网产品的需求分析和用户研究
+    questions:
+    - 请简述策略产品经理进行用户需求分析的核心方法论
+    - 如何利用数据驱动产品决策，请举例说明
+  - name: 数据指标体系建设
+    description: 如何搭建产品的数据指标体系
+    questions:
+    - 请说明核心指标（如DAU、留存率）的定义和计算方式
+    - 如何通过指标体系发现产品问题
+  - name: A/B测试
+    description: 如何设计和分析A/B测试
+    questions:
+    - 请简述A/B测试的流程和关键注意事项
+    - 如何判断A/B测试结果是否显著
 content_operation:
-  role: "互联网内容运营"
+  role: 互联网内容运营
   max_iterations: 3
   topics:
-    - name: "内容策略制定"
-      description: "如何制定内容运营策略"
-      questions:
-        - "请说明如何根据平台特性制定内容策略"
-        - "如何分析目标用户的内容偏好"
-    - name: "内容生产与优化"
-      description: "如何进行内容生产和优化"
-      questions:
-        - "如何提高内容的点击率和完读率"
-        - "请说明内容标题的优化技巧"
-    - name: "数据分析与效果评估"
-      description: "如何通过数据分析优化内容运营"
-      questions:
-        - "内容运营的核心指标有哪些，如何解读"
-        - "如何根据数据反馈调整内容策略"
-
+  - name: 内容策略制定
+    description: 如何制定内容运营策略
+    questions:
+    - 请说明如何根据平台特性制定内容策略
+    - 如何分析目标用户的内容偏好
+  - name: 内容生产与优化
+    description: 如何进行内容生产和优化
+    questions:
+    - 如何提高内容的点击率和完读率
+    - 请说明内容标题的优化技巧
+  - name: 数据分析与效果评估
+    description: 如何通过数据分析优化内容运营
+    questions:
+    - 内容运营的核心指标有哪些，如何解读
+    - 如何根据数据反馈调整内容策略
 content_judge:
-  role: "内容质量审核与标准制定专家"
+  role: 内容质量审核与标准制定专家
   max_iterations: 3
   topics:
-    - name: "抖音内容生态问题判断标准"
-      description: "学习如何判断抖音视频是否存在生态问题，制定明确的判断标准"
-      questions:
-        - "请制定一套抖音内容生态问题判断标准，涵盖哪些违规类型？"
-        - "如何判断视频内容是否涉及虚假宣传、低俗内容或其他违规？"
-    - name: "抖音视频内容审核实操"
-      description: "通过实际案例学习如何审核抖音视频内容，判断是否有问题"
-      questions:
-        - "请分析以下抖音视频并判断是否有问题：
-          1. 视频标题：'一夜暴富！下载这个APP赚百万！'，内容展示虚假收益截图
-          2. 视频内容涉及低俗擦边球话题
-          3. 正常知识分享类视频"
-        - "请判断以下视频并说明问题：
-          视频A：夸大产品功效宣称'包治百病'
-          视频B：传播不实谣言信息
-          视频C：正常美食教程"
-    - name: "问题内容分类与反馈"
-      description: "学习如何分类内容问题，并给出明确的改进建议"
-      questions:
-        - "请将以下问题内容分类，并给出具体修改建议：
-          1. 标题严重夸张与内容不符
-          2. 引导用户点击低俗链接
-          3. 内容涉嫌抄袭无原创性"
-        - "如何给内容创作者提供清晰、可操作的违规反馈？"
+  - name: 抖音内容生态问题判断标准
+    description: 学习如何判断抖音视频是否存在生态问题，制定明确的判断标准
+    questions:
+    - 请制定一套抖音内容生态问题判断标准，涵盖哪些违规类型？
+    - 如何判断视频内容是否涉及虚假宣传、低俗内容或其他违规？
+  - name: 抖音视频内容审核实操
+    description: 通过实际案例学习如何审核抖音视频内容，判断是否有问题
+    questions:
+    - 请分析以下抖音视频并判断是否有问题： 1. 视频标题：'一夜暴富！下载这个APP赚百万！'，内容展示虚假收益截图 2. 视频内容涉及低俗擦边球话题 3.
+      正常知识分享类视频
+    - 请判断以下视频并说明问题： 视频A：夸大产品功效宣称'包治百病' 视频B：传播不实谣言信息 视频C：正常美食教程
+  - name: 问题内容分类与反馈
+    description: 学习如何分类内容问题，并给出明确的改进建议
+    questions:
+    - 请将以下问题内容分类，并给出具体修改建议： 1. 标题严重夸张与内容不符 2. 引导用户点击低俗链接 3. 内容涉嫌抄袭无原创性
+    - 如何给内容创作者提供清晰、可操作的违规反馈？

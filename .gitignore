@@ -22,6 +22,7 @@ wheels/
 
 # Environment variables
 .env
+.venv/
 
 # IDE
 .vscode/
@@ -39,3 +40,8 @@ prompts/*.txt
 
 # Memory directory
 memory/
+
+# Runtime/generated artifacts
+cache/
+runs/
+case_studies/*/items/

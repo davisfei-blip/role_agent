@@ -1,0 +1,348 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-header">
+  <div>
+    <h1>{{ workspace.student.name }}</h1>
+    <p>{{ workspace.student.role }} · key: {{ workspace.student.config_key }}</p>
+  </div>
+  <div class="header-actions">
+    <span class="badge badge-accent">{{ workspace.stats.case_count }} 个案例</span>
+    <span class="badge">{{ workspace.stats.recent_training_time or "暂无训练记录" }}</span>
+    <form method="post" action="/students/{{ workspace.student.config_key }}/run/standard">
+      <button class="button" type="submit">运行常规训练</button>
+    </form>
+    <form method="post" action="/students/{{ workspace.student.config_key }}/run/case">
+      <button class="button button-secondary" type="submit">运行案例纠偏</button>
+    </form>
+  </div>
+</section>
+
+{% if saved %}
+<div class="flash flash-success">
+  {% if saved == "basic" %}基础信息已保存。{% elif saved == "training" %}常规训练配置已保存。{% elif saved == "resolve" %}gid 基础解析已完成。{% elif saved == "understand" %}豆包理解已完成。{% else %}已保存。{% endif %}
+</div>
+{% endif %}
+{% if uploaded %}
+<div class="flash flash-success">案例表已上传并绑定到当前 student。</div>
+{% endif %}
+{% if error %}
+<div class="flash flash-error">{{ error }}</div>
+{% endif %}
+
+<!-- Tab 导航 -->
+<nav class="tab-nav">
+  <button class="tab-link is-active" data-tab="basic" onclick="switchTab('basic')">基础信息</button>
+  <button class="tab-link" data-tab="training" onclick="switchTab('training')">常规训练配置</button>
+  <button class="tab-link" data-tab="cases" onclick="switchTab('cases')">案例纠偏</button>
+  <button class="tab-link" data-tab="memory" onclick="switchTab('memory')">训练记忆</button>
+</nav>
+
+<!-- Tab 1: 基础信息 -->
+<div class="tab-panel is-active" id="tab-basic">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>基础信息</h2>
+        <p>定义这个 student 是谁，以及它的默认 prompt。</p>
+      </div>
+    </div>
+    <form method="post" action="/students/{{ workspace.student.config_key }}/basic" class="form-panel">
+      <div class="field">
+        <label>名称</label>
+        <input name="name" value="{{ workspace.student.name }}">
+      </div>
+      <div class="field">
+        <label>角色</label>
+        <input name="role" value="{{ workspace.student.role }}">
+      </div>
+      <div class="field">
+        <label>config_key</label>
+        <input value="{{ workspace.student.config_key }}" disabled>
+      </div>
+      <div class="field">
+        <label>prompt 文件路径</label>
+        <input name="prompt_file" value="{{ workspace.student.prompt_file }}">
+      </div>
+      <div class="field">
+        <label>默认 Prompt</label>
+        <textarea name="default_prompt" rows="10">{{ workspace.student.default_prompt }}</textarea>
+      </div>
+      <div class="actions">
+        <button class="button" type="submit">保存基础信息</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Tab 2: 常规训练配置 -->
+<div class="tab-panel" id="tab-training">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>常规训练配置</h2>
+        <p>定义 teacher 教什么、问什么、最多迭代几轮。</p>
+      </div>
+    </div>
+    <form method="post" action="/students/{{ workspace.student.config_key }}/training" class="form-panel">
+      <div class="field">
+        <label>训练角色说明</label>
+        <input name="role" value="{{ workspace.training_config.role }}">
+      </div>
+      <div class="field">
+        <label>最大迭代次数</label>
+        <input type="number" min="1" name="max_iterations" value="{{ workspace.training_config.max_iterations or 3 }}">
+      </div>
+
+      <div class="topic-list" id="topic-list">
+        {% for topic in workspace.training_config.topics %}
+        <div class="topic-card">
+          <div class="topic-card-header">
+            <h3>Topic {{ loop.index }}</h3>
+          </div>
+          <div class="field">
+            <label>Topic 名称</label>
+            <input name="topic_name" value="{{ topic.name }}">
+          </div>
+          <div class="field">
+            <label>Topic 描述</label>
+            <textarea name="topic_description" rows="3">{{ topic.description }}</textarea>
+          </div>
+          <div class="field">
+            <label>Questions（每行一个）</label>
+            <textarea name="topic_questions" rows="5">{{ topic.questions | join('\n') }}</textarea>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <template id="topic-template">
+        <div class="topic-card">
+          <div class="topic-card-header">
+            <h3>新 Topic</h3>
+          </div>
+          <div class="field">
+            <label>Topic 名称</label>
+            <input name="topic_name" value="">
+          </div>
+          <div class="field">
+            <label>Topic 描述</label>
+            <textarea name="topic_description" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label>Questions（每行一个）</label>
+            <textarea name="topic_questions" rows="5"></textarea>
+          </div>
+        </div>
+      </template>
+
+      <div class="actions">
+        <button class="button button-secondary" type="button" onclick="addTopic()">新增 Topic</button>
+        <button class="button" type="submit">保存常规训练配置</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Tab 3: 案例纠偏 -->
+<div class="tab-panel" id="tab-cases">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>案例纠偏</h2>
+        <p>当 student 学得不够好时，在这里补案例。</p>
+      </div>
+    </div>
+
+    <!-- 处理进度概览 -->
+    <div class="info-grid">
+      <div>
+        <span class="info-label">当前文件</span>
+        <strong>{{ workspace.case_bundle.file or "未上传" }}</strong>
+      </div>
+      <div>
+        <span class="info-label">案例数量</span>
+        <strong>{{ workspace.case_bundle.rows|length }}</strong>
+      </div>
+      <div>
+        <span class="info-label">数据集目录</span>
+        <strong>{{ workspace.case_bundle.dataset_dir }}</strong>
+      </div>
+    </div>
+
+    <!-- 进度条 -->
+    {% if workspace.case_bundle.rows|length > 0 %}
+    <div style="margin-bottom: var(--space-6);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+        <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">处理进度</span>
+        <span style="font-size: 13px; color: var(--text-secondary);">
+          {{ workspace.case_bundle.resolved_count }} 已解析 / {{ workspace.case_bundle.understood_count }} 已理解 / {{ workspace.case_bundle.rows|length }} 总计
+        </span>
+      </div>
+      <div class="progress-bar">
+        {% set pct = (workspace.case_bundle.understood_count / workspace.case_bundle.rows|length * 100) if workspace.case_bundle.rows|length > 0 else 0 %}
+        <div class="progress-bar-fill" style="width: {{ pct }}%"></div>
+      </div>
+      <div class="progress-stats">
+        <span>视频素材：{{ workspace.case_bundle.downloaded_count }} 已下载</span>
+        <span>音频：{{ workspace.case_bundle.audio_count }} 已生成</span>
+        <span>封面：{{ workspace.case_bundle.covered_count }} 已生成</span>
+        <span>图片：{{ workspace.case_bundle.image_count }} 已下载</span>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- 上传表单 -->
+    <form method="post" action="/students/{{ workspace.student.config_key }}/cases" enctype="multipart/form-data" class="upload-form">
+      <input type="file" name="case_file" accept=".csv,.tsv,.xlsx" required>
+      <button class="button" type="submit">上传并绑定案例表</button>
+    </form>
+
+    <!-- 操作按钮 -->
+    <div class="actions" style="margin-bottom: var(--space-6);">
+      <form method="post" action="/students/{{ workspace.student.config_key }}/cases/resolve">
+        <button class="button button-secondary" type="submit">解析 gid 基础内容</button>
+      </form>
+      <form method="post" action="/students/{{ workspace.student.config_key }}/cases/understand">
+        <button class="button" type="submit">生成豆包理解结果</button>
+      </form>
+    </div>
+
+    {% if workspace.case_bundle.error %}
+    <div class="flash flash-error">{{ workspace.case_bundle.error }}</div>
+    {% endif %}
+
+    <!-- 案例预览 -->
+    {% if workspace.case_bundle.preview_rows %}
+    <div class="case-preview-list">
+      {% for row in workspace.case_bundle.preview_rows %}
+      <article class="case-preview-card">
+        <div class="memory-meta">
+          <strong>{{ row.display_title }}</strong>
+          <span class="badge {% if row.resolve_status == 'understood' %}badge-success{% elif row.resolve_status == 'resolved' %}badge-accent{% else %}badge-error{% endif %}">
+            {{ row.resolve_status }}
+          </span>
+        </div>
+        <p class="hint">gid: {{ row.gid or "无" }}</p>
+        <p><strong>人工判断：</strong>{{ row.user_judgment }}</p>
+        <p><strong>人工理由：</strong>{{ row.user_reason }}</p>
+
+        {% if row.extract %}
+        <div class="case-block">
+          <strong>基础解析</strong>
+          <p>类型：{{ row.extract.content_type }}{% if row.extract.author %} · 作者：{{ row.extract.author }}{% endif %}</p>
+          <pre>{{ row.extract.content }}</pre>
+        </div>
+        {% endif %}
+
+        {% if row.has_source_video or row.has_audio or row.has_cover or row.image_relpaths %}
+        <div class="case-block">
+          <strong>本地素材</strong>
+          <p>原始视频：{{ row.source_video_relpath if row.has_source_video else "未下载" }}</p>
+          <p>音频：{{ row.audio_relpath if row.has_audio else "未生成" }}</p>
+          <p>封面：{{ row.cover_relpath if row.has_cover else "未生成" }}</p>
+          {% if row.image_relpaths %}
+          <p>图片：{{ row.image_relpaths|length }} 张</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if row.understanding and row.understanding.parsed %}
+        <div class="case-block">
+          <strong>豆包理解</strong>
+          <p><strong>标题：</strong>{{ row.understanding.parsed.title }}</p>
+          <pre>{{ row.understanding.parsed.content }}</pre>
+          {% if row.understanding.parsed.risk_points %}
+          <p><strong>风险点：</strong>{{ row.understanding.parsed.risk_points | join("；") }}</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="table-wrap compact-table">
+          <table>
+            <thead>
+              <tr>
+                {% for column in workspace.case_bundle.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {% for column in workspace.case_bundle.columns %}
+                <td>{{ row.raw.get(column, '') if row.raw else row.get(column, '') }}</td>
+                {% endfor %}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p>还没有案例表。支持上传 csv / tsv / xlsx，至少包含 gid + user_judgment + user_reason，或旧格式 title + content + user_judgment + user_reason。</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Tab 4: 训练记忆 -->
+<div class="tab-panel" id="tab-memory">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>最近训练记忆</h2>
+        <p>先用已有记忆做轻量复盘，后面再接完整训练详情页。</p>
+      </div>
+    </div>
+    {% if workspace.recent_memories %}
+    <div class="memory-list">
+      {% for item in workspace.recent_memories %}
+      <article class="memory-card">
+        <div class="memory-meta">
+          <strong>{{ item.topic }}</strong>
+          <span>{{ item.timestamp }}</span>
+        </div>
+        <p>{{ item.teacher_feedback[:160] ~ ('...' if item.teacher_feedback|length > 160 else '') if item.teacher_feedback else item.knowledge[:160] ~ ('...' if item.knowledge|length > 160 else '') }}</p>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <p>这个 student 还没有训练记忆。</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function switchTab(tabId) {
+  // 切换 Tab 按钮状态
+  document.querySelectorAll('.tab-link').forEach(link => {
+    link.classList.toggle('is-active', link.dataset.tab === tabId);
+  });
+
+  // 切换面板显示
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('is-active', panel.id === 'tab-' + tabId);
+  });
+
+  // 保存到 URL hash，刷新后保持
+  window.location.hash = tabId;
+}
+
+function addTopic() {
+  const template = document.getElementById('topic-template');
+  const clone = template.content.cloneNode(true);
+  document.getElementById('topic-list').appendChild(clone);
+}
+
+// 页面加载时根据 hash 恢复 tab
+window.addEventListener('DOMContentLoaded', () => {
+  const hash = window.location.hash.replace('#', '');
+  if (hash && ['basic', 'training', 'cases', 'memory'].includes(hash)) {
+    switchTab(hash);
+  }
+});
+</script>
+{% endblock %}
