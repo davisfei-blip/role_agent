@@ -1,11 +1,11 @@
 import os
 import json
 from datetime import datetime
-from openai import OpenAI
 from dotenv import load_dotenv
 from config import Config
 from search_tool import SearchTool
 from memory import MemoryManager
+from services.responses_api_client import ResponsesAPIClient
 
 load_dotenv()
 
@@ -18,13 +18,6 @@ def refresh_runtime_state():
     global memory_manager
     config.reload()
     memory_manager = MemoryManager(config.memory_dir)
-
-
-def get_openai_client():
-    return OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    )
 
 
 class StudentAgent:
@@ -44,7 +37,9 @@ class StudentAgent:
     def _load_prompt(self):
         if os.path.exists(self.prompt_file):
             with open(self.prompt_file, 'r', encoding='utf-8') as f:
-                return f.read()
+                prompt = f.read()
+                if prompt and prompt.strip():
+                    return prompt
         return self._get_default_prompt()
 
     def _save_prompt(self, prompt):
@@ -59,6 +54,12 @@ class StudentAgent:
             return self.default_prompt
         return f"""你是一名{self.role}。请根据题目要求回答问题，力求准确、专业、有深度。"""
 
+    def _get_effective_prompt(self):
+        prompt = self.current_prompt if isinstance(self.current_prompt, str) else ""
+        if prompt.strip():
+            return prompt
+        return self._get_default_prompt()
+
     def _load_memory(self):
         """从文件加载记忆"""
         loaded_memory = memory_manager.load_memory(self.name)
@@ -72,31 +73,9 @@ class StudentAgent:
             memory_manager.save_structured_memory(self.name, self.knowledge_base)
 
     def _chat(self, messages, on_delta=None):
-        client = get_openai_client()
-
-        if on_delta:
-            stream = client.chat.completions.create(
-                model=config.model_name,
-                messages=messages,
-                stream=True,
-            )
-            parts = []
-            for chunk in stream:
-                choices = chunk.choices or []
-                if not choices:
-                    continue
-                delta = choices[0].delta.content or ""
-                if not delta:
-                    continue
-                parts.append(delta)
-                on_delta(delta)
-            return "".join(parts)
-
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=messages,
-        )
-        return response.choices[0].message.content
+        client = ResponsesAPIClient(config.model_name)
+        text, _ = client.generate_from_messages(messages, on_delta=on_delta)
+        return text
 
     def learn(self, topic_description, teacher_feedback=None, on_delta=None):
         # 如果启用搜索功能，先搜索相关信息
@@ -121,7 +100,7 @@ class StudentAgent:
 
         knowledge = self._chat(
             [
-                {"role": "system", "content": self.current_prompt},
+                {"role": "system", "content": self._get_effective_prompt()},
                 {"role": "user", "content": learning_prompt}
             ],
             on_delta=on_delta,
@@ -143,15 +122,20 @@ class StudentAgent:
         return knowledge
 
     def take_exam(self, question, on_delta=None):
+        learned_knowledge = [
+            {"topic": item["topic"], "knowledge": item["knowledge"]}
+            for item in self.knowledge_base
+            if (item.get("knowledge") or "").strip()
+        ]
         exam_prompt = f"""请回答以下问题：
 {question}
 请基于你已学的知识进行回答。
 已学知识：
-{json.dumps([{"topic": k["topic"], "knowledge": k["knowledge"]} for k in self.knowledge_base], ensure_ascii=False, indent=2)}"""
+{json.dumps(learned_knowledge, ensure_ascii=False, indent=2)}"""
 
         return self._chat(
             [
-                {"role": "system", "content": self.current_prompt},
+                {"role": "system", "content": self._get_effective_prompt()},
                 {"role": "user", "content": exam_prompt}
             ],
             on_delta=on_delta,
@@ -165,7 +149,7 @@ class StudentAgent:
 {teacher_feedback}
 
 当前系统prompt：
-{self.current_prompt}
+{self._get_effective_prompt()}
 
 请提供优化后的系统prompt，只输出prompt内容，不要其他解释。"""
 
@@ -175,8 +159,11 @@ class StudentAgent:
             ],
             on_delta=on_delta,
         )
-        self._save_prompt(new_prompt)
-        return new_prompt
+        if new_prompt and new_prompt.strip():
+            new_prompt = new_prompt.strip()
+            self._save_prompt(new_prompt)
+            return new_prompt
+        return self._get_effective_prompt()
 
     def judge_case(self, case_title, case_content, on_delta=None):
         """判断案例是否有问题"""
@@ -192,7 +179,7 @@ class StudentAgent:
 
         return self._chat(
             [
-                {"role": "system", "content": self.current_prompt},
+                {"role": "system", "content": self._get_effective_prompt()},
                 {"role": "user", "content": judge_prompt}
             ],
             on_delta=on_delta,
@@ -217,7 +204,7 @@ class StudentAgent:
 
         knowledge = self._chat(
             [
-                {"role": "system", "content": self.current_prompt},
+                {"role": "system", "content": self._get_effective_prompt()},
                 {"role": "user", "content": learn_prompt}
             ],
             on_delta=on_delta,

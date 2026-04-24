@@ -70,3 +70,29 @@ class RunStore:
             except Exception:
                 continue
         return events
+
+    def reconcile_incomplete_runs(self, reason="服务重启，运行中的任务已中断"):
+        updated = []
+        for path in sorted(self.runs_dir.glob("*.json")):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            if data.get("status") != "running":
+                continue
+
+            data["status"] = "failed"
+            data["error"] = reason
+            data["current_step"] = reason
+            data["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.save(data)
+            self.append_event(data["run_id"], {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "event": "run_finished",
+                "speaker": "system",
+                "phase": "run",
+                "content": reason,
+            })
+            updated.append(data["run_id"])
+        return updated

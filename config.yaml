@@ -1,5 +1,5 @@
 model:
-  name: ep-20260417115335-7mtct
+  name: gpt-5.4-pro-2026-03-05
 search:
   enabled: true
   num_results: 5
@@ -7,11 +7,14 @@ memory:
   enabled: true
   auto_save: true
   memory_dir: memory
+auth:
+  admin_usernames:
+  - zhuyong
 case_studies:
-  content_operation:
-    file: case_studies/content_operation/dataset.xlsx
   content_judge:
     file: case_studies/content_judge/dataset.xlsx
+  content_operation:
+    file: case_studies/content_operation/dataset.xlsx
   strategy_product:
     file: case_studies/strategy_product/dataset.xlsx
 students:

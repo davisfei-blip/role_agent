@@ -1,6 +1,7 @@
 import csv
 import os
 import shutil
+import re
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -98,6 +99,64 @@ class ConfigStore:
         }
         self.save(config)
 
+    def create_student(self, payload):
+        config = self.load()
+        students = config.setdefault("students", [])
+
+        config_key = self._normalize_config_key(payload.get("config_key", ""))
+        if not config_key:
+            raise ValueError("config_key 不能为空")
+        if self._get_student(config, config_key):
+            raise ValueError(f"config_key 已存在：{config_key}")
+
+        prompt_file = payload.get("prompt_file", "").strip() or f"prompts/{config_key}_prompt.txt"
+        prompt_path = self.base_dir / prompt_file
+        prompt_path.parent.mkdir(parents=True, exist_ok=True)
+
+        default_prompt = (payload.get("default_prompt") or "").strip() or f"你是一名专业的{payload.get('role', '').strip() or payload.get('name', '').strip() or '专家'}。请基于你的专业身份进行分析和回答。"
+        prompt_path.write_text(default_prompt, encoding="utf-8")
+
+        student = {
+            "name": payload["name"].strip(),
+            "role": payload["role"].strip(),
+            "prompt_file": prompt_file,
+            "default_prompt": default_prompt,
+            "config_key": config_key,
+        }
+        students.append(student)
+        config[config_key] = {
+            "role": payload["role"].strip(),
+            "max_iterations": 3,
+            "topics": [],
+        }
+        self.save(config)
+        return student
+
+    def delete_student(self, config_key):
+        latest_process = self.case_process_store.latest_for_student(config_key)
+        if latest_process and latest_process.get("status") == "running":
+            raise ValueError("当前专家仍有案例处理任务在运行，请稍后再删")
+
+        config = self.load()
+        students = config.get("students", [])
+        target = self._get_student(config, config_key)
+        if not target:
+            raise ValueError(f"未找到 expert: {config_key}")
+
+        config["students"] = [item for item in students if item.get("config_key") != config_key]
+        config.pop(config_key, None)
+        self.save(config)
+
+        prompt_file = target.get("prompt_file", "")
+        if prompt_file:
+            prompt_path = self.base_dir / prompt_file
+            if prompt_path.exists():
+                prompt_path.unlink()
+
+        self.delete_case_file(config_key, skip_running_check=True)
+        self._delete_memory_files(target.get("name", ""))
+        return target
+
     def update_case_file(self, config_key, upload_file):
         config = self.load()
         ext = Path(upload_file.filename or "").suffix.lower() or ".csv"
@@ -122,10 +181,11 @@ class ConfigStore:
         self.save(config)
         return str(target_path.relative_to(self.base_dir))
 
-    def delete_case_file(self, config_key):
-        latest_process = self.case_process_store.latest_for_student(config_key)
-        if latest_process and latest_process.get("status") == "running":
-            raise ValueError("当前案例仍在处理中，请等待完成后再删除")
+    def delete_case_file(self, config_key, skip_running_check=False):
+        if not skip_running_check:
+            latest_process = self.case_process_store.latest_for_student(config_key)
+            if latest_process and latest_process.get("status") == "running":
+                raise ValueError("当前案例仍在处理中，请等待完成后再删除")
 
         config = self.load()
 
@@ -139,6 +199,19 @@ class ConfigStore:
 
         self.case_process_store.delete_for_student(config_key)
         return case_entry
+
+    def _delete_memory_files(self, student_name):
+        if not student_name:
+            return
+        memory_dir = self.base_dir / self.get_settings()["memory_dir"]
+        for suffix in [".md", ".json"]:
+            path = memory_dir / f"{student_name}_memory{suffix}"
+            if path.exists():
+                path.unlink()
+
+    def _normalize_config_key(self, value):
+        value = str(value or "").strip().lower()
+        return re.sub(r"[^a-z0-9_]+", "_", value).strip("_")
 
     def _get_student(self, config, config_key):
         for student in config.get("students", []):

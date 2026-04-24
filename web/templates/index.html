@@ -2,68 +2,121 @@
 {% block content %}
 <section class="page-header">
   <div>
-    <h1>学习中心</h1>
-    <p>这里看 agent 的训练配置、最近学习过程和训练结果。</p>
+    <h1>专家中心</h1>
+    <p>现在已经有账号体系了。所有人都能看全部专家，但只有创建者和管理员可以修改。</p>
+  </div>
+  <div class="header-actions">
+    <span class="badge">可编辑 {{ stats.editable_count }}</span>
+    <button class="button" onclick="document.getElementById('create-modal').classList.add('is-open')">+ 创建新专家</button>
   </div>
 </section>
+
+{% if created %}
+<div class="flash flash-success">专家创建成功。</div>
+{% endif %}
+{% if deleted %}
+<div class="flash flash-success">专家已删除。</div>
+{% endif %}
+{% if error %}
+<div class="flash flash-error">{{ error }}</div>
+{% endif %}
 
 <section class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-label">Student 总数</div>
+  <article class="stat-card">
+    <div class="stat-label">专家总数</div>
     <div class="stat-value">{{ stats.student_count }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">有案例的 Student</div>
+  </article>
+  <article class="stat-card">
+    <div class="stat-label">我可编辑的专家</div>
+    <div class="stat-value">{{ stats.editable_count }}</div>
+  </article>
+  <article class="stat-card">
+    <div class="stat-label">已绑定案例</div>
     <div class="stat-value">{{ stats.students_with_cases }}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">最近有训练记录</div>
+  </article>
+  <article class="stat-card">
+    <div class="stat-label">最近有训练</div>
     <div class="stat-value">{{ stats.recent_updates }}</div>
-  </div>
+  </article>
 </section>
 
-<section class="card-grid">
+<section class="expert-grid">
   {% for student in students %}
-  <article class="card">
-    <div class="card-header">
-      <div>
+  <article class="expert-card">
+    <div class="expert-card-header">
+      <div class="expert-avatar">{{ student.name[0] }}</div>
+      <div class="expert-info">
         <h2>{{ student.name }}</h2>
         <p>{{ student.role }}</p>
       </div>
+    </div>
+
+    <div class="expert-tags">
       <span class="badge">{{ student.config_key }}</span>
+      <span class="badge">创建者：{{ student.owner.owner_label }}</span>
+      {% if student.can_edit %}
+      <span class="badge badge-accent">可编辑</span>
+      {% else %}
+      <span class="badge">只读</span>
+      {% endif %}
+      {% if student.case_file %}
+      <span class="badge badge-success">已上传案例</span>
+      {% else %}
+      <span class="badge">未上传案例</span>
+      {% endif %}
     </div>
-    <dl class="meta-list">
-      <div>
-        <dt>最近训练</dt>
-        <dd>{{ student.recent_training_time or "暂无" }}</dd>
+
+    <div class="expert-stats">
+      <div class="expert-stat">
+        <span class="expert-stat-value">{{ student.case_count }}</span>
+        <span class="expert-stat-label">案例</span>
       </div>
-      <div>
-        <dt>最近考点</dt>
-        <dd>{{ student.recent_topic or "暂无" }}</dd>
+      <div class="expert-stat">
+        <span class="expert-stat-value">{{ student.recent_run.summary.latest_score if student.recent_run and student.recent_run.summary else "--" }}</span>
+        <span class="expert-stat-label">最近分数</span>
       </div>
-      <div>
-        <dt>案例数 / 最近分数</dt>
-        <dd>{{ student.case_count }} / {{ student.recent_run.summary.latest_score if student.recent_run and student.recent_run.summary else "--" }}</dd>
+      <div class="expert-stat">
+        <span class="expert-stat-value">{{ student.recent_training_time or "--" }}</span>
+        <span class="expert-stat-label">最近训练</span>
       </div>
-      <div>
-        <dt>案例文件</dt>
-        <dd>{{ student.case_file or "未上传" }}</dd>
-      </div>
-    </dl>
-    {% if student.recent_memories %}
-    <div class="case-block">
-      <strong>最近学习过程</strong>
-      {% for item in student.recent_memories %}
-      <p class="hint">{{ item.timestamp }} · {{ item.topic }}</p>
-      <p>{{ item.knowledge[:120] ~ ('...' if item.knowledge|length > 120 else '') }}</p>
-      {% endfor %}
     </div>
-    {% endif %}
-    <div class="card-footer">
-      <p class="hint">{{ student.recent_feedback[:80] ~ ('...' if student.recent_feedback|length > 80 else '') if student.recent_feedback else "还没有 teacher feedback 记录" }}</p>
-      <a class="button" href="/students/{{ student.config_key }}">进入工作台</a>
+
+    <div class="expert-actions">
+      <a class="button" href="/students/{{ student.config_key }}">{{ "进入并编辑" if student.can_edit else "进入查看" }}</a>
     </div>
   </article>
   {% endfor %}
 </section>
+
+<div class="modal" id="create-modal">
+  <div class="modal-overlay" onclick="document.getElementById('create-modal').classList.remove('is-open')"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>创建新专家</h2>
+      <button class="modal-close" onclick="document.getElementById('create-modal').classList.remove('is-open')">&times;</button>
+    </div>
+    <form method="post" action="/experts/create" class="form-panel">
+      <div class="field">
+        <label>专家名称</label>
+        <input name="name" placeholder="例如：内容运营专家" required>
+      </div>
+      <div class="field">
+        <label>专家角色</label>
+        <input name="role" placeholder="例如：互联网内容运营" required>
+      </div>
+      <div class="field">
+        <label>标识 key（英文，唯一）</label>
+        <input name="config_key" placeholder="例如：content_operation" required pattern="[a-z0-9_]+">
+      </div>
+      <div class="field">
+        <label>默认 Prompt（可选）</label>
+        <textarea name="default_prompt" rows="4" placeholder="定义这个专家的基础能力和行为准则..."></textarea>
+      </div>
+      <div class="actions">
+        <button class="button button-secondary" type="button" onclick="document.getElementById('create-modal').classList.remove('is-open')">取消</button>
+        <button class="button" type="submit">创建我的专家</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}

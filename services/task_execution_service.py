@@ -4,11 +4,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
+from services.case_content_service import CaseContentService
 from config import Config
 from services.dataset_content_store import DatasetContentStore
-from services.douyin_media_store import DouyinMediaStore
-from services.douyin_resolver import DouyinResolver
-from services.douyin_understander import DouyinUnderstander
 from services.task_execution_store import TaskExecutionStore
 from student_agent import create_all_students, refresh_runtime_state as refresh_student_state
 
@@ -20,7 +18,7 @@ class TaskExecutionService:
         self.base_dir = Path(base_dir)
         self.config = Config(self.base_dir / "config.yaml")
         self.dataset_store = DatasetContentStore(self.base_dir)
-        self.douyin_resolver = DouyinResolver()
+        self.case_content_service = CaseContentService(self.base_dir)
         self.execution_store = TaskExecutionStore(self.base_dir)
         self._state_lock = threading.Lock()
 
@@ -134,23 +132,9 @@ class TaskExecutionService:
                 "message": "正在解析内容",
             })
 
-            extracted = self.dataset_store.load_extract(config_key, gid)
-            if not extracted:
-                extracted = self.douyin_resolver.resolve_gid(gid)
-                self.dataset_store.save_extract(config_key, gid, extracted)
-
-            media_store = DouyinMediaStore(self.dataset_store)
-            assets = media_store.ensure_local_assets(config_key, gid, extracted)
-
-            understanding = self.dataset_store.load_understanding(config_key, gid)
-            if not understanding or understanding.get("status") != "completed":
-                understander = DouyinUnderstander(self.config.reload().model_name)
-                understanding = understander.understand(extracted, material_bundle=assets)
-                self.dataset_store.save_understanding(config_key, gid, understanding)
-
-            parsed = (understanding or {}).get("parsed") or {}
-            title = parsed.get("title") or extracted.get("title") or f"GID: {gid}"
-            content = parsed.get("content") or extracted.get("content", "")
+            pipeline_result = self.case_content_service.resolve(config_key, gid=gid)
+            title = pipeline_result["title"] or f"GID: {gid}"
+            content = pipeline_result["content"] or ""
 
             self._update_item(execution_id, index, {
                 "title": title,
@@ -158,6 +142,12 @@ class TaskExecutionService:
                 "stage": "judging",
                 "message": "正在生成判定",
             })
+
+            if not content:
+                raise ValueError(
+                    pipeline_result["error"]
+                    or "当前 gid 未能解析出可用于判断的内容"
+                )
 
             judge_raw = student.judge_case(title, content)
             judge, reason, category = self._parse_judge(judge_raw)

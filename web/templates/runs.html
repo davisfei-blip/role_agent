@@ -3,7 +3,7 @@
 <section class="page-header">
   <div>
     <h1>训练记录</h1>
-    <p>查看每次常规训练和案例纠偏的结果。</p>
+    <p>查看每次常规训练和案例纠偏的结果。这个列表对所有登录用户可见。</p>
   </div>
 </section>
 
@@ -15,6 +15,7 @@
         <tr>
           <th>时间</th>
           <th>Student</th>
+          <th>创建者</th>
           <th>模式</th>
           <th>状态</th>
           <th>摘要</th>
@@ -26,6 +27,7 @@
         <tr>
           <td>{{ run.finished_at or run.started_at }}</td>
           <td>{{ run.student_name }}</td>
+          <td>{{ run.owner.owner_label }}</td>
           <td>
             <span class="badge {% if run.mode == 'standard' %}badge-accent{% else %}badge-success{% endif %}">
               {{ "常规训练" if run.mode == "standard" else "案例纠偏" }}

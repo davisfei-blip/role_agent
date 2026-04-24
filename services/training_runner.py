@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config import Config
+from services.case_content_service import CaseContentService
 from services.dataset_content_store import DatasetContentStore
 from services.douyin_media_store import DouyinMediaStore
 from teacher_agent import TeacherAgent, refresh_runtime_state as refresh_teacher_state
@@ -21,6 +22,7 @@ class TrainingRunner:
         self.douyin_resolver = DouyinResolver()
         self.douyin_media_store = DouyinMediaStore(self.dataset_store)
         self.douyin_understander = DouyinUnderstander(self.config.model_name)
+        self.case_content_service = CaseContentService(self.base_dir)
         self._lock = threading.Lock()
 
     def start_standard_training(self, config_key):
@@ -52,8 +54,8 @@ class TrainingRunner:
         self._refresh_runtime()
         student = self._get_student(config_key)
         teacher = TeacherAgent(self.base_dir / "config.yaml")
-        role_config = self.config.get_student_config(config_key)
         run = self.run_store.get(run_id)
+        role_config = self.config.get_student_config(config_key)
         if not student or not role_config or not run:
             if run:
                 run["status"] = "failed"
@@ -358,34 +360,22 @@ class TrainingRunner:
                 self._set_current_step(run, f"处理案例 {index}/{len(case_studies)}")
                 title = case.get("title") or f"GID: {case.get('gid', '未知')}"
                 content = case.get("content", "")
-                resolved_content = self.dataset_store.load_extract(config_key, case.get("gid", "")) if case.get("gid") else None
-                understanding = self.dataset_store.load_understanding(config_key, case.get("gid", "")) if case.get("gid") else None
+                pipeline_result = self.case_content_service.resolve(
+                    config_key,
+                    gid=case.get("gid", ""),
+                    title=title,
+                    content=content,
+                )
+                title = pipeline_result["title"]
+                content = pipeline_result["content"]
+                resolved_content = pipeline_result["extract"]
+                understanding = pipeline_result["understanding"]
 
-                if not resolved_content and case.get("gid"):
-                    try:
-                        resolved_content = self.douyin_resolver.resolve_gid(case.get("gid"))
-                        self.dataset_store.save_extract(config_key, case.get("gid"), resolved_content)
-                        self._advance_progress(run, f"完成基础解析：案例 {index}")
-                    except Exception as exc:
-                        resolved_content = {"error": str(exc)}
-
-                if not understanding and resolved_content and not resolved_content.get("error") and case.get("gid"):
-                    try:
-                        self._set_current_step(run, f"内容理解中：案例 {index}")
-                        material_bundle = self.douyin_media_store.ensure_local_assets(config_key, case.get("gid"), resolved_content)
-                        understanding = self.douyin_understander.understand(resolved_content, material_bundle=material_bundle)
-                        self.dataset_store.save_understanding(config_key, case.get("gid"), understanding)
-                        self._advance_progress(run, f"完成内容理解：案例 {index}")
-                    except Exception as exc:
-                        understanding = {"status": "failed", "error": str(exc)}
-
-                if understanding and understanding.get("parsed"):
-                    parsed = understanding["parsed"]
-                    title = parsed.get("title") or title
-                    content = parsed.get("content") or content
-                elif resolved_content and not resolved_content.get("error"):
-                    title = resolved_content.get("title") or title
-                    content = resolved_content.get("content", "") or content
+                if resolved_content and not pipeline_result["error"]:
+                    self._advance_progress(run, f"完成基础解析：案例 {index}")
+                if case.get("gid") and understanding and understanding.get("status") == "completed":
+                    self._set_current_step(run, f"内容理解中：案例 {index}")
+                    self._advance_progress(run, f"完成内容理解：案例 {index}")
 
                 case_record = {
                     "index": index,
@@ -400,7 +390,7 @@ class TrainingRunner:
                 if not content:
                     case_record["status"] = "skipped"
                     case_record["reason"] = (
-                        (resolved_content or {}).get("error")
+                        pipeline_result["error"]
                         or "当前案例只有 gid，且未能成功拉取对应内容。"
                     )
                     skipped += 1

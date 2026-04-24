@@ -45,3 +45,4 @@ memory/
 cache/
 runs/
 case_studies/*/items/
+app_data.db

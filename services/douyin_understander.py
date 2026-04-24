@@ -1,15 +1,14 @@
 import base64
 import json
 import mimetypes
-import os
 from datetime import datetime
 from pathlib import Path
 
-import requests
 from dotenv import load_dotenv
+from services.responses_api_client import ResponsesAPIClient
 
 
-DEFAULT_DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+DEFAULT_DOUBAO_BASE_URL = "https://api.openai.com/v1/responses"
 DEFAULT_PROMPT = """你在为一个 teacher-student 训练系统生成案例材料。
 请基于输入的抖音内容，输出严格 JSON：
 {
@@ -111,73 +110,8 @@ class DouyinUnderstander:
         return f"data:{mime_type};base64,{encoded}"
 
     def _call_chat_completion(self, message_items):
-        config = self._resolve_config()
-        response = requests.post(
-            config["base_url"],
-            headers={
-                "Authorization": f"Bearer {config['api_key']}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": config["model"],
-                "messages": [{"role": "user", "content": message_items}],
-            },
-            timeout=300,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        choices = payload.get("choices") or []
-        if not choices:
-            raise ValueError(f"豆包返回异常: {json.dumps(payload, ensure_ascii=False)}")
-
-        message = choices[0].get("message") or {}
-        content = message.get("content", "")
-        if isinstance(content, list):
-            text_parts = []
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text_parts.append(item.get("text", ""))
-                elif isinstance(item, str):
-                    text_parts.append(item)
-            content = "\n".join(part for part in text_parts if part)
-        elif not isinstance(content, str):
-            content = json.dumps(content, ensure_ascii=False)
-
-        return content.strip(), payload
-
-    def _resolve_config(self):
-        api_key = (
-            os.getenv("DOUBAO_API_KEY")
-            or os.getenv("ARK_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-        )
-        model = (
-            os.getenv("DOUBAO_MODEL")
-            or os.getenv("ARK_MODEL")
-            or self.model_name
-        )
-        base_url = (
-            os.getenv("DOUBAO_BASE_URL")
-            or os.getenv("ARK_BASE_URL")
-            or os.getenv("OPENAI_BASE_URL")
-            or DEFAULT_DOUBAO_BASE_URL
-        )
-
-        if base_url.endswith("/chat/completions"):
-            final_base_url = base_url
-        else:
-            final_base_url = base_url.rstrip("/") + "/chat/completions"
-
-        if not api_key:
-            raise ValueError("缺少豆包/ARK/OpenAI API Key，无法做视频理解")
-        if not model:
-            raise ValueError("缺少模型名，无法做视频理解")
-
-        return {
-            "api_key": api_key,
-            "model": model,
-            "base_url": final_base_url,
-        }
+        client = ResponsesAPIClient(self.model_name)
+        return client.generate([{"role": "user", "content": message_items}])
 
     def _parse_json(self, text):
         text = text.strip()

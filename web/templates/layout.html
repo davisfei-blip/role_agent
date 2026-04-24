@@ -9,19 +9,53 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand">Agent 训练台</div>
+      <div>
+        <div class="brand">Agent 训练台</div>
+        {% if current_user %}
+        <div class="user-panel">
+          <div>
+            <div class="user-name">{{ current_user.username }}</div>
+            <div class="user-meta">已登录账号</div>
+          </div>
+          <span class="badge {% if is_admin %}badge-accent{% endif %}">{{ "管理员" if is_admin else "普通用户" }}</span>
+        </div>
+        {% endif %}
+      </div>
+
       <nav class="nav">
-        <a href="/learning" class="nav-link {% if request.url.path == '/' or request.url.path.startswith('/learning') or request.url.path.startswith('/students') %}is-active{% endif %}">学习</a>
-        <a href="/tasks" class="nav-link {% if request.url.path.startswith('/tasks') %}is-active{% endif %}">任务执行</a>
-        <a href="/runs" class="nav-link {% if request.url.path.startswith('/runs') %}is-active{% endif %}">训练记录</a>
-        <a href="/settings" class="nav-link {% if request.url.path == '/settings' %}is-active{% endif %}">系统设置</a>
-        <div class="nav-section">Students</div>
-        {% for item in nav_students %}
-        <a href="/students/{{ item.config_key }}" class="nav-link {% if active_config_key == item.config_key %}is-active{% endif %}">
-          {{ item.name }}
+        <a href="/learning" class="nav-link {% if request.url.path == '/' or request.url.path.startswith('/learning') or request.url.path.startswith('/students') %}is-active{% endif %}">
+          <span class="nav-icon">🎓</span><span class="nav-text">专家中心</span>
         </a>
-        {% endfor %}
+        <a href="/tasks" class="nav-link {% if request.url.path.startswith('/tasks') %}is-active{% endif %}">
+          <span class="nav-icon">🚀</span><span class="nav-text">任务执行</span>
+        </a>
+        <a href="/runs" class="nav-link {% if request.url.path.startswith('/runs') %}is-active{% endif %}">
+          <span class="nav-icon">📋</span><span class="nav-text">训练记录</span>
+        </a>
+        
+        <div class="nav-section">全部专家</div>
+        <div class="nav-experts-list">
+          {% for item in nav_students %}
+          <a href="/students/{{ item.config_key }}" class="nav-link {% if active_config_key == item.config_key %}is-active{% endif %}" title="{{ item.name }}">
+            <span class="nav-icon">🤖</span>
+            <span class="nav-text">{{ item.name }}</span>
+            {% if item.can_edit %}<span class="nav-tag">可编辑</span>{% endif %}
+          </a>
+          {% endfor %}
+        </div>
+
+        {% if is_admin %}
+        <a href="/settings" class="nav-link {% if request.url.path == '/settings' %}is-active{% endif %}" style="margin-top: auto;">
+          <span class="nav-icon">⚙️</span><span class="nav-text">系统设置</span>
+        </a>
+        {% endif %}
       </nav>
+
+      {% if current_user %}
+      <form method="post" action="/logout">
+        <button class="button button-secondary button-full" type="submit">退出登录</button>
+      </form>
+      {% endif %}
     </aside>
     <main class="main">
       {% block content %}{% endblock %}

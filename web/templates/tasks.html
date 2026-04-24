@@ -3,7 +3,7 @@
 <section class="page-header">
   <div>
     <h1>任务执行</h1>
-    <p>选择已有 agent，输入一批 gid，让它直接输出 judge 和 reason，并支持下载结果表。</p>
+    <p>大家都能看历史执行记录，但新任务只能基于你自己创建的专家发起，管理员不受限制。</p>
   </div>
 </section>
 
@@ -15,11 +15,12 @@
     </div>
   </div>
 
+  {% if editable_students %}
   <form id="task-execution-form" class="form-panel" onsubmit="return startTaskExecution(event)">
     <div class="field">
       <label>选择 agent</label>
       <select name="config_key" id="task-agent-select" required>
-        {% for student in students %}
+        {% for student in editable_students %}
         <option value="{{ student.config_key }}">{{ student.name }}（{{ student.config_key }}）</option>
         {% endfor %}
       </select>
@@ -33,6 +34,11 @@
       <span class="hint">系统会自动解析内容，再调用所选 agent 做判定。</span>
     </div>
   </form>
+  {% else %}
+  <div class="empty-state">
+    <p>你当前没有可编辑的专家，所以这里只能查看历史记录，暂时不能新建执行任务。</p>
+  </div>
+  {% endif %}
 </section>
 
 <section class="panel" id="task-current-panel">
@@ -96,6 +102,7 @@
         <tr>
           <th>时间</th>
           <th>Agent</th>
+          <th>创建者</th>
           <th>数量</th>
           <th>状态</th>
           <th>进度</th>
@@ -107,6 +114,7 @@
         <tr>
           <td>{{ execution.finished_at or execution.started_at }}</td>
           <td>{{ execution.student_name }}</td>
+          <td>{{ execution.owner.owner_label }}</td>
           <td>{{ execution.input_count }}</td>
           <td>
             <span class="badge {% if execution.status == 'completed' %}badge-success{% elif execution.status == 'completed_with_errors' or execution.status == 'failed' %}badge-error{% else %}badge-accent{% endif %}">
@@ -176,8 +184,10 @@ function renderExecution(execution) {
     metaEl.textContent = '执行完成后可以直接下载 CSV。';
     tableWrap.style.display = 'none';
     downloadLink.style.display = 'none';
-    submitButton.disabled = false;
-    submitButton.textContent = '开始执行';
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = '开始执行';
+    }
     return;
   }
 
@@ -219,8 +229,10 @@ function renderExecution(execution) {
     downloadLink.style.display = 'none';
   }
 
-  submitButton.disabled = execution.status === 'running';
-  submitButton.textContent = execution.status === 'running' ? '执行中...' : '开始执行';
+  if (submitButton) {
+    submitButton.disabled = execution.status === 'running';
+    submitButton.textContent = execution.status === 'running' ? '执行中...' : '开始执行';
+  }
 }
 
 async function startTaskExecution(event) {
@@ -267,29 +279,24 @@ async function pollTaskExecution() {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload.error || '获取任务失败');
+      throw new Error(payload.error || '读取任务状态失败');
     }
     renderExecution(payload.execution);
-    if (payload.execution && payload.execution.status === 'running') {
+    if (payload.execution.status === 'running') {
       taskPoller = window.setTimeout(pollTaskExecution, 1500);
-      return;
     }
-    stopTaskPolling();
-    window.setTimeout(() => window.location.reload(), 800);
   } catch (error) {
-    stopTaskPolling();
-    alert(error.message);
+    console.error(error);
+    taskPoller = window.setTimeout(pollTaskExecution, 3000);
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+if (initialExecution) {
+  currentExecutionId = initialExecution.execution_id;
   renderExecution(initialExecution);
-  if (initialExecution) {
-    currentExecutionId = initialExecution.execution_id;
-    if (initialExecution.status === 'running') {
-      pollTaskExecution();
-    }
+  if (initialExecution.status === 'running') {
+    pollTaskExecution();
   }
-});
+}
 </script>
 {% endblock %}

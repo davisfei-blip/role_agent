@@ -1,29 +1,29 @@
 {% extends "layout.html" %}
 {% block content %}
+{% set can_edit = workspace.permissions.can_edit %}
 <section class="page-header">
   <div>
     <h1>{{ workspace.student.name }}</h1>
-    <p>{{ workspace.student.role }} · key: {{ workspace.student.config_key }}</p>
+    <p>{{ workspace.student.role }}</p>
   </div>
   <div class="header-actions">
+    <span class="badge">创建者：{{ workspace.owner.owner_label }}</span>
+    <span class="badge {% if can_edit %}badge-accent{% endif %}">{{ "可编辑" if can_edit else "只读" }}</span>
     <span class="badge badge-accent">{{ workspace.stats.case_count }} 个案例</span>
     <span class="badge">{{ workspace.stats.recent_training_time or "暂无训练记录" }}</span>
-    <form method="post" action="/students/{{ workspace.student.config_key }}/run/standard">
-      <button class="button" type="submit">运行常规训练</button>
-    </form>
-    <form method="post" action="/students/{{ workspace.student.config_key }}/run/case">
-      <button class="button button-secondary" type="submit">运行案例纠偏</button>
-    </form>
   </div>
 </section>
 
+{% if not can_edit %}
+<div class="flash flash-error">{{ workspace.permissions.read_only_reason }}</div>
+{% endif %}
 {% if saved %}
 <div class="flash flash-success">
-  {% if saved == "basic" %}基础信息已保存。{% elif saved == "training" %}常规训练配置已保存。{% elif saved == "resolve" %}gid 基础解析已完成。{% elif saved == "understand" %}豆包理解已完成。{% else %}已保存。{% endif %}
+  {% if saved == "basic" %}基础信息已保存。{% elif saved == "training" %}常规训练配置已保存。{% elif saved == "resolve" %}gid 基础解析已完成。{% elif saved == "understand" %}豆包理解已完成。{% elif saved == "created" %}专家已创建。{% else %}已保存。{% endif %}
 </div>
 {% endif %}
 {% if uploaded %}
-<div class="flash flash-success">案例表已上传并绑定到当前 student。</div>
+<div class="flash flash-success">案例表已上传并绑定到当前 expert。</div>
 {% endif %}
 {% if deleted %}
 <div class="flash flash-success">已有案例及解析缓存已删除。</div>
@@ -32,127 +32,54 @@
 <div class="flash flash-error">{{ error }}</div>
 {% endif %}
 
-<!-- Tab 导航 -->
+<section class="action-cards">
+  <article class="action-card">
+    <div class="action-card-icon">📚</div>
+    <h3>常规学习</h3>
+    <p>让专家通过预设课程进行系统学习，提升基础能力。</p>
+    {% if can_edit %}
+    <form method="post" action="/students/{{ workspace.student.config_key }}/run/standard">
+      <button class="button" type="submit">开始学习</button>
+    </form>
+    {% else %}
+    <span class="button button-secondary is-disabled">只读不可操作</span>
+    {% endif %}
+  </article>
+
+  <article class="action-card">
+    <div class="action-card-icon">🔧</div>
+    <h3>案例纠偏</h3>
+    <p>通过实际案例纠正专家的判断偏差，提升实战能力。</p>
+    {% if can_edit %}
+    <form method="post" action="/students/{{ workspace.student.config_key }}/run/case">
+      <button class="button button-secondary" type="submit">开始纠偏</button>
+    </form>
+    {% else %}
+    <span class="button button-secondary is-disabled">只读不可操作</span>
+    {% endif %}
+  </article>
+
+  <article class="action-card">
+    <div class="action-card-icon">🚀</div>
+    <h3>执行任务</h3>
+    <p>让训练好的专家执行实际的批量任务。</p>
+    <a class="button button-ghost" href="/tasks">去任务页</a>
+  </article>
+</section>
+
 <nav class="tab-nav">
-  <button class="tab-link is-active" data-tab="basic" onclick="switchTab('basic')">基础信息</button>
-  <button class="tab-link" data-tab="training" onclick="switchTab('training')">常规训练配置</button>
-  <button class="tab-link" data-tab="cases" onclick="switchTab('cases')">案例纠偏</button>
+  <button class="tab-link is-active" data-tab="cases" onclick="switchTab('cases')">案例纠偏</button>
+  <button class="tab-link" data-tab="training" onclick="switchTab('training')">学习配置</button>
   <button class="tab-link" data-tab="memory" onclick="switchTab('memory')">训练记忆</button>
+  <button class="tab-link" data-tab="settings" onclick="switchTab('settings')">专家设置</button>
 </nav>
 
-<!-- Tab 1: 基础信息 -->
-<div class="tab-panel is-active" id="tab-basic">
-  <div class="panel">
-    <div class="panel-header">
-      <div>
-        <h2>基础信息</h2>
-        <p>定义这个 student 是谁，以及它的默认 prompt。</p>
-      </div>
-    </div>
-    <form method="post" action="/students/{{ workspace.student.config_key }}/basic" class="form-panel">
-      <div class="field">
-        <label>名称</label>
-        <input name="name" value="{{ workspace.student.name }}">
-      </div>
-      <div class="field">
-        <label>角色</label>
-        <input name="role" value="{{ workspace.student.role }}">
-      </div>
-      <div class="field">
-        <label>config_key</label>
-        <input value="{{ workspace.student.config_key }}" disabled>
-      </div>
-      <div class="field">
-        <label>prompt 文件路径</label>
-        <input name="prompt_file" value="{{ workspace.student.prompt_file }}">
-      </div>
-      <div class="field">
-        <label>默认 Prompt</label>
-        <textarea name="default_prompt" rows="10">{{ workspace.student.default_prompt }}</textarea>
-      </div>
-      <div class="actions">
-        <button class="button" type="submit">保存基础信息</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Tab 2: 常规训练配置 -->
-<div class="tab-panel" id="tab-training">
-  <div class="panel">
-    <div class="panel-header">
-      <div>
-        <h2>常规训练配置</h2>
-        <p>定义 teacher 教什么、问什么、最多迭代几轮。</p>
-      </div>
-    </div>
-    <form method="post" action="/students/{{ workspace.student.config_key }}/training" class="form-panel">
-      <div class="field">
-        <label>训练角色说明</label>
-        <input name="role" value="{{ workspace.training_config.role }}">
-      </div>
-      <div class="field">
-        <label>最大迭代次数</label>
-        <input type="number" min="1" name="max_iterations" value="{{ workspace.training_config.max_iterations or 3 }}">
-      </div>
-
-      <div class="topic-list" id="topic-list">
-        {% for topic in workspace.training_config.topics %}
-        <div class="topic-card">
-          <div class="topic-card-header">
-            <h3>Topic {{ loop.index }}</h3>
-          </div>
-          <div class="field">
-            <label>Topic 名称</label>
-            <input name="topic_name" value="{{ topic.name }}">
-          </div>
-          <div class="field">
-            <label>Topic 描述</label>
-            <textarea name="topic_description" rows="3">{{ topic.description }}</textarea>
-          </div>
-          <div class="field">
-            <label>Questions（每行一个）</label>
-            <textarea name="topic_questions" rows="5">{{ topic.questions | join('\n') }}</textarea>
-          </div>
-        </div>
-        {% endfor %}
-      </div>
-
-      <template id="topic-template">
-        <div class="topic-card">
-          <div class="topic-card-header">
-            <h3>新 Topic</h3>
-          </div>
-          <div class="field">
-            <label>Topic 名称</label>
-            <input name="topic_name" value="">
-          </div>
-          <div class="field">
-            <label>Topic 描述</label>
-            <textarea name="topic_description" rows="3"></textarea>
-          </div>
-          <div class="field">
-            <label>Questions（每行一个）</label>
-            <textarea name="topic_questions" rows="5"></textarea>
-          </div>
-        </div>
-      </template>
-
-      <div class="actions">
-        <button class="button button-secondary" type="button" onclick="addTopic()">新增 Topic</button>
-        <button class="button" type="submit">保存常规训练配置</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Tab 3: 案例纠偏 -->
-<div class="tab-panel" id="tab-cases">
+<div class="tab-panel is-active" id="tab-cases">
   <div class="panel">
     <div class="panel-header">
       <div>
         <h2>案例纠偏</h2>
-        <p>当 student 学得不够好时，在这里补案例。</p>
+        <p>上传案例表，让专家学习正确的判断标准。</p>
       </div>
     </div>
 
@@ -171,12 +98,36 @@
       </div>
     </div>
 
+    {% if workspace.case_bundle.rows|length > 0 %}
+    <div style="margin-bottom: var(--space-6);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+        <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">处理进度</span>
+        <span style="font-size: 13px; color: var(--text-secondary);">
+          {{ workspace.case_bundle.resolved_count }} 已解析 / {{ workspace.case_bundle.understood_count }} 已理解 / {{ workspace.case_bundle.rows|length }} 总计
+        </span>
+      </div>
+      <div class="progress-bar">
+        {% set pct = (workspace.case_bundle.understood_count / workspace.case_bundle.rows|length * 100) if workspace.case_bundle.rows|length > 0 else 0 %}
+        <div class="progress-bar-fill" style="width: {{ pct }}%"></div>
+      </div>
+      <div class="progress-stats">
+        <span>视频素材：{{ workspace.case_bundle.downloaded_count }} 已下载</span>
+        <span>封面：{{ workspace.case_bundle.covered_count }} 已生成</span>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if can_edit %}
     <form method="post" action="/students/{{ workspace.student.config_key }}/cases" enctype="multipart/form-data" class="upload-form">
       <input type="file" name="case_file" accept=".csv,.tsv,.xlsx" required>
-      <button class="button" type="submit">上传并绑定案例表</button>
+      <button class="button" type="submit">上传案例表</button>
     </form>
+    {% else %}
+    <p class="hint" style="margin-bottom: var(--space-6);">你正在查看他人创建的专家，所以这里只展示案例数据，不提供上传和删除操作。</p>
+    {% endif %}
 
     <div class="actions" style="margin-bottom: var(--space-6);">
+      {% if can_edit %}
       <button
         id="case-process-button"
         class="button"
@@ -191,11 +142,14 @@
         {% endif %}
       </button>
       {% if workspace.case_bundle.file or workspace.case_bundle.rows|length > 0 %}
-      <form method="post" action="/students/{{ workspace.student.config_key }}/cases/delete" onsubmit="return confirm('确认删除当前 student 的案例文件和解析缓存吗？');">
+      <form method="post" action="/students/{{ workspace.student.config_key }}/cases/delete" onsubmit="return confirm('确认删除当前案例文件和解析缓存吗？');">
         <button class="button button-secondary" type="submit" {% if workspace.latest_case_process and workspace.latest_case_process.status == "running" %}disabled{% endif %}>删除已有案例</button>
       </form>
       {% endif %}
       <span class="hint">点一次后自动完成 gid 解析、本地下载和模型理解。</span>
+      {% else %}
+      <span class="hint">只读模式下可以看进度和案例明细，但不能触发重新解析。</span>
+      {% endif %}
     </div>
 
     {% if workspace.case_bundle.error %}
@@ -251,7 +205,7 @@
         {% if workspace.latest_case_process %}
           开始于 {{ workspace.latest_case_process.started_at }}{% if workspace.latest_case_process.finished_at %}，结束于 {{ workspace.latest_case_process.finished_at }}{% endif %}
         {% else %}
-          上传案例表后，只需点一次“开始解析”。
+          上传案例表后，只需点一次"开始解析"。
         {% endif %}
       </p>
 
@@ -274,7 +228,6 @@
       </div>
     </div>
 
-    <!-- 案例预览 -->
     {% if workspace.case_bundle.preview_rows %}
     <div class="case-preview-list">
       {% for row in workspace.case_bundle.preview_rows %}
@@ -345,13 +298,82 @@
   </div>
 </div>
 
-<!-- Tab 4: 训练记忆 -->
+<div class="tab-panel" id="tab-training">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>常规学习配置</h2>
+        <p>定义专家要学习的课程内容和考核标准。</p>
+      </div>
+    </div>
+    <form method="post" action="/students/{{ workspace.student.config_key }}/training" class="form-panel">
+      <div class="field">
+        <label>训练角色说明</label>
+        <input name="role" value="{{ workspace.training_config.role }}" {% if not can_edit %}disabled{% endif %}>
+      </div>
+      <div class="field">
+        <label>最大迭代次数</label>
+        <input type="number" min="1" name="max_iterations" value="{{ workspace.training_config.max_iterations or 3 }}" {% if not can_edit %}disabled{% endif %}>
+      </div>
+
+      <div class="topic-list" id="topic-list">
+        {% for topic in workspace.training_config.topics %}
+        <div class="topic-card">
+          <div class="topic-card-header">
+            <h3>Topic {{ loop.index }}</h3>
+          </div>
+          <div class="field">
+            <label>Topic 名称</label>
+            <input name="topic_name" value="{{ topic.name }}" {% if not can_edit %}disabled{% endif %}>
+          </div>
+          <div class="field">
+            <label>Topic 描述</label>
+            <textarea name="topic_description" rows="3" {% if not can_edit %}disabled{% endif %}>{{ topic.description }}</textarea>
+          </div>
+          <div class="field">
+            <label>Questions（每行一个）</label>
+            <textarea name="topic_questions" rows="5" {% if not can_edit %}disabled{% endif %}>{{ topic.questions | join('\n') }}</textarea>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {% if can_edit %}
+      <template id="topic-template">
+        <div class="topic-card">
+          <div class="topic-card-header">
+            <h3>新 Topic</h3>
+          </div>
+          <div class="field">
+            <label>Topic 名称</label>
+            <input name="topic_name" value="">
+          </div>
+          <div class="field">
+            <label>Topic 描述</label>
+            <textarea name="topic_description" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label>Questions（每行一个）</label>
+            <textarea name="topic_questions" rows="5"></textarea>
+          </div>
+        </div>
+      </template>
+
+      <div class="actions">
+        <button class="button button-secondary" type="button" onclick="addTopic()">新增 Topic</button>
+        <button class="button" type="submit">保存配置</button>
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
 <div class="tab-panel" id="tab-memory">
   <div class="panel">
     <div class="panel-header">
       <div>
-        <h2>最近训练记忆</h2>
-        <p>先用已有记忆做轻量复盘，后面再接完整训练详情页。</p>
+        <h2>训练记忆</h2>
+        <p>查看专家的历史学习记录和反馈。</p>
       </div>
     </div>
     {% if workspace.recent_memories %}
@@ -368,7 +390,53 @@
     </div>
     {% else %}
     <div class="empty-state">
-      <p>这个 student 还没有训练记忆。</p>
+      <p>这个专家还没有训练记忆。</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="tab-panel" id="tab-settings">
+  <div class="panel">
+    <div class="panel-header">
+      <div>
+        <h2>专家设置</h2>
+        <p>修改专家的基础信息和行为定义。</p>
+      </div>
+    </div>
+    <form method="post" action="/students/{{ workspace.student.config_key }}/basic" class="form-panel">
+      <div class="field">
+        <label>名称</label>
+        <input name="name" value="{{ workspace.student.name }}" {% if not can_edit %}disabled{% endif %}>
+      </div>
+      <div class="field">
+        <label>角色</label>
+        <input name="role" value="{{ workspace.student.role }}" {% if not can_edit %}disabled{% endif %}>
+      </div>
+      <div class="field">
+        <label>config_key</label>
+        <input value="{{ workspace.student.config_key }}" disabled>
+      </div>
+      <div class="field">
+        <label>prompt 文件路径</label>
+        <input name="prompt_file" value="{{ workspace.student.prompt_file }}" {% if not can_edit %}disabled{% endif %}>
+      </div>
+      <div class="field">
+        <label>默认 Prompt</label>
+        <textarea name="default_prompt" rows="10" {% if not can_edit %}disabled{% endif %}>{{ workspace.student.default_prompt }}</textarea>
+      </div>
+      {% if can_edit %}
+      <div class="actions">
+        <button class="button" type="submit">保存设置</button>
+      </div>
+      {% endif %}
+    </form>
+
+    {% if can_edit %}
+    <div class="actions" style="margin-top: var(--space-4);">
+      <form method="post" action="/experts/{{ workspace.student.config_key }}/delete" onsubmit="return confirm('确认删除这个专家吗？会一起删除它的 prompt、案例和记忆文件。');">
+        <button class="button button-secondary" type="submit">删除专家</button>
+      </form>
     </div>
     {% endif %}
   </div>
@@ -378,24 +446,22 @@
 const initialCaseProcess = {{ workspace.latest_case_process | tojson }};
 let caseProcessPoller = null;
 let hasReloadedAfterProcess = false;
+const workspaceCanEdit = {{ 'true' if can_edit else 'false' }};
 
 function switchTab(tabId) {
-  // 切换 Tab 按钮状态
   document.querySelectorAll('.tab-link').forEach(link => {
     link.classList.toggle('is-active', link.dataset.tab === tabId);
   });
-
-  // 切换面板显示
   document.querySelectorAll('.tab-panel').forEach(panel => {
     panel.classList.toggle('is-active', panel.id === 'tab-' + tabId);
   });
-
-  // 保存到 URL hash，刷新后保持
   window.location.hash = tabId;
 }
 
 function addTopic() {
+  if (!workspaceCanEdit) return;
   const template = document.getElementById('topic-template');
+  if (!template) return;
   const clone = template.content.cloneNode(true);
   document.getElementById('topic-list').appendChild(clone);
 }
@@ -432,11 +498,13 @@ function renderCaseProcess(job) {
     percentEl.textContent = '0%';
     fillEl.style.width = '0%';
     statsEl.innerHTML = '<span>基础解析：0</span><span>素材就绪：0</span><span>模型理解：0</span><span>失败：0</span>';
-    metaEl.textContent = '上传案例表后，只需点一次“开始解析”。';
+    metaEl.textContent = '上传案例表后，只需点一次"开始解析"。';
     summaryEl.textContent = '还没有开始处理任务';
     caseListEl.innerHTML = '<div class="empty-state"><p>还没有开始处理任务。</p></div>';
-    buttonEl.disabled = {{ 'true' if workspace.case_bundle.rows|length == 0 else 'false' }};
-    buttonEl.textContent = '开始解析';
+    if (buttonEl) {
+      buttonEl.disabled = {{ 'true' if workspace.case_bundle.rows|length == 0 else 'false' }};
+      buttonEl.textContent = '开始解析';
+    }
     return;
   }
 
@@ -473,50 +541,47 @@ function renderCaseProcess(job) {
     `).join('');
   }
 
-  buttonEl.disabled = status === 'running';
-  buttonEl.textContent = status === 'running' ? '处理中...' : '开始解析';
+  if (buttonEl) {
+    buttonEl.disabled = status === 'running';
+    buttonEl.textContent = status === 'running' ? '处理中...' : '开始解析';
+  }
 }
 
-async function fetchLatestCaseProcess(configKey) {
-  const response = await fetch(`/students/${configKey}/cases/process/latest`, {
-    headers: { 'Accept': 'application/json' }
-  });
-  const payload = await response.json();
-  return payload.job || null;
+async function pollCaseProcessing(configKey) {
+  try {
+    const response = await fetch(`/students/${configKey}/cases/process/latest`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    const payload = await response.json();
+    renderCaseProcess(payload.job);
+
+    const status = payload.job?.status;
+    if (status === 'running') {
+      caseProcessPoller = window.setTimeout(() => pollCaseProcessing(configKey), 2000);
+    } else if (!hasReloadedAfterProcess && (status === 'completed' || status === 'completed_with_errors')) {
+      hasReloadedAfterProcess = true;
+      window.location.reload();
+    }
+  } catch (error) {
+    console.error(error);
+    caseProcessPoller = window.setTimeout(() => pollCaseProcessing(configKey), 4000);
+  }
 }
 
-function stopCaseProcessPolling() {
+function stopCaseProcessingPoll() {
   if (caseProcessPoller) {
     window.clearTimeout(caseProcessPoller);
     caseProcessPoller = null;
   }
 }
 
-async function pollCaseProcess(configKey) {
-  try {
-    const job = await fetchLatestCaseProcess(configKey);
-    renderCaseProcess(job);
-
-    if (job && job.status === 'running') {
-      caseProcessPoller = window.setTimeout(() => pollCaseProcess(configKey), 1500);
-      return;
-    }
-
-    stopCaseProcessPolling();
-    if (job && !hasReloadedAfterProcess) {
-      hasReloadedAfterProcess = true;
-      window.setTimeout(() => window.location.reload(), 800);
-    }
-  } catch (error) {
-    stopCaseProcessPolling();
-    alert(`获取处理进度失败：${error.message}`);
-  }
-}
-
 async function startCaseProcessing(configKey) {
+  if (!workspaceCanEdit) return;
   const buttonEl = document.getElementById('case-process-button');
-  buttonEl.disabled = true;
-  buttonEl.textContent = '处理中...';
+  if (buttonEl) {
+    buttonEl.disabled = true;
+    buttonEl.textContent = '处理中...';
+  }
 
   try {
     const response = await fetch(`/students/${configKey}/cases/process`, {
@@ -525,31 +590,29 @@ async function startCaseProcessing(configKey) {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(payload.error || '启动处理任务失败');
+      throw new Error(payload.error || '启动失败');
     }
-
-    hasReloadedAfterProcess = false;
     renderCaseProcess(payload);
-    stopCaseProcessPolling();
-    pollCaseProcess(configKey);
+    stopCaseProcessingPoll();
+    pollCaseProcessing(configKey);
   } catch (error) {
-    buttonEl.disabled = false;
-    buttonEl.textContent = '开始解析';
+    if (buttonEl) {
+      buttonEl.disabled = false;
+      buttonEl.textContent = '开始解析';
+    }
     alert(error.message);
   }
 }
 
-// 页面加载时根据 hash 恢复 tab
-window.addEventListener('DOMContentLoaded', () => {
-  const hash = window.location.hash.replace('#', '');
-  if (hash && ['basic', 'training', 'cases', 'memory'].includes(hash)) {
-    switchTab(hash);
-  }
+if (window.location.hash) {
+  switchTab(window.location.hash.replace('#', ''));
+}
 
+if (initialCaseProcess) {
   renderCaseProcess(initialCaseProcess);
-  if (initialCaseProcess && initialCaseProcess.status === 'running') {
-    pollCaseProcess('{{ workspace.student.config_key }}');
+  if (initialCaseProcess.status === 'running') {
+    pollCaseProcessing('{{ workspace.student.config_key }}');
   }
-});
+}
 </script>
 {% endblock %}

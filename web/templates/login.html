@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title or '登录' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body class="auth-body">
+  <main class="auth-shell">
+    <section class="auth-card">
+      <div class="auth-header">
+        <h1>登录训练台</h1>
+        <p>先登录账号，再进入你的专家工作区。</p>
+      </div>
+
+      {% if error %}
+      <div class="flash flash-error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/auth/login" class="form-panel">
+        <input type="hidden" name="next" value="{{ next or '/learning' }}">
+        <div class="field">
+          <label>用户名</label>
+          <input name="username" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input type="password" name="password" autocomplete="current-password" required>
+        </div>
+        <div class="actions auth-actions">
+          <button class="button" type="submit">登录</button>
+          <a class="button button-ghost" href="/register{% if next %}?next={{ next | urlencode }}{% endif %}">去注册</a>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

@@ -3,13 +3,22 @@
 <section class="page-header">
   <div>
     <h1>系统设置</h1>
-    <p>这些设置会影响所有 teacher / student 的默认运行环境。</p>
+    <p>这些设置会影响所有 teacher / student 的默认运行环境。这个页面仅管理员可见。</p>
   </div>
 </section>
 
 {% if saved %}
 <div class="flash flash-success">设置已保存。</div>
 {% endif %}
+
+<div class="flash flash-success">
+  当前管理员规则：只有配置在管理员名单里的用户名才拥有管理员权限。
+  {% if auth_settings.admin_usernames %}
+  当前名单：{{ auth_settings.admin_usernames | join('、') }}。
+  {% else %}
+  当前名单为空。
+  {% endif %}
+</div>
 
 <form method="post" action="/settings" class="panel form-panel">
   <div class="field">

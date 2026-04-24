@@ -1,8 +1,7 @@
-import os
 import yaml
-from openai import OpenAI
 from dotenv import load_dotenv
 from config import Config
+from services.responses_api_client import ResponsesAPIClient
 
 load_dotenv()
 
@@ -11,13 +10,6 @@ config = Config()
 
 def refresh_runtime_state():
     config.reload()
-
-
-def get_openai_client():
-    return OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    )
 
 
 class TeacherAgent:
@@ -41,31 +33,9 @@ class TeacherAgent:
         }
 
     def _chat(self, messages, on_delta=None):
-        client = get_openai_client()
-
-        if on_delta:
-            stream = client.chat.completions.create(
-                model=config.model_name,
-                messages=messages,
-                stream=True,
-            )
-            parts = []
-            for chunk in stream:
-                choices = chunk.choices or []
-                if not choices:
-                    continue
-                delta = choices[0].delta.content or ""
-                if not delta:
-                    continue
-                parts.append(delta)
-                on_delta(delta)
-            return "".join(parts)
-
-        response = client.chat.completions.create(
-            model=config.model_name,
-            messages=messages,
-        )
-        return response.choices[0].message.content
+        client = ResponsesAPIClient(config.model_name)
+        text, _ = client.generate_from_messages(messages, on_delta=on_delta)
+        return text
 
     def evaluate_answer(self, question, student_answer, role, on_delta=None):
         evaluation_prompt = f"""你是一名严格的{role}面试官/老师。请评估以下回答：
